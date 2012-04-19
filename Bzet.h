@@ -230,10 +230,20 @@ EXPORT_TAGS int64_t BZET_FUNC(getBits)(BZET_PTR b, int64_t* bits, int64_t limit 
 // Auxiliary functions
 
 NODETYPE _binop(BZET_PTR left, BZET_PTR right, OP op, int lev, size_t left_loc = 1, size_t right_loc = 1, size_t loc = 1);
-void _printBzet(BZET_PTR b, int stdOffset = 0, FILE* target = stdout, size_t loc = 1, int depth = 0, int offset = 0, bool pad = 0);
+
+// Recursively print the bzet in "pretty print"
+void _printBzet(BZET_PTR b, int stdOffset, FILE* target, int depth, size_t loc = 0, int offset = 0, bool pad = 0);
+
+// Align two Bzets to the same level
 void align(BZET_PTR b1, BZET_PTR b2);
+
+// Strip leading unnecessary nodes
 void normalize(BZET_PTR b);
+
+// Return the location of the next node after traversing the subtree starting at loc
 size_t stepThrough(BZET_PTR b, size_t loc);
+
+// In-place bitwise NOT of the subtree whose root is at loc
 void subtreeNot(BZET_PTR b, size_t loc, int depth);
 
 
@@ -777,7 +787,9 @@ size_t BZET_FUNC(size)(BZET_PTR b) {
 }
 
 // Bzet_HEX(b)
-void BZET_FUNC(HEX)(BZET_PTR b);
+void BZET_FUNC(HEX)(BZET_PTR b) {
+    _printBzet(b, 0, stdout, b->depth);
+}
 
 // Bzet_repr(b, target)
 void BZET_FUNC(repr)(BZET_PTR b, void *target) {
@@ -788,17 +800,13 @@ void BZET_FUNC(repr)(BZET_PTR b, void *target) {
 
 // Bzet_CLEAN(b)
 void BZET_FUNC(CLEAN)(BZET_PTR b) {
-    resize(b, 1);
-    memset(b->bzet, 0x00, sizeof(*b->bzet));
+    resize(b, 0);
     b->depth = 0;
 }
 
 // Bzet_EMPTY(b)
 bool BZET_FUNC(EMPTY)(BZET_PTR b) {
-    if (b->depth == 0 && !b->bzet[0])
-        return true;
-
-    return false;
+    return (b->nhalfnodes == 0);
 }
 
 // Bzet_getBits(b, bits, limit, start)
@@ -808,12 +816,102 @@ int64_t BZET_FUNC(getBits)(BZET_PTR b, int64_t* bits, int64_t limit, int64_t sta
 // Auxiliary functions
 
 NODETYPE _binop(BZET_PTR left, BZET_PTR right, OP op, int lev, size_t left_loc, size_t right_loc, size_t loc);
-void _printBzet(BZET_PTR b, int stdOffset, FILE* target, size_t loc, int depth, int offset, bool pad);
+
+void _printBzet(BZET_PTR b, int stdOffset, FILE* target, int depth, size_t loc, int offset, bool pad) {
+    // Print level info
+    if (loc == 0) {
+        fprintf(target, "%.2XL", b->depth);
+
+        // If empty, we're done.
+        if (BZET_FUNC(EMPTY)(b))
+            fprintf(target, "\n");
+    }
+
+    // No reading past the bzet!
+    if (loc >= b->nhalfnodes)
+        return;
+
+    halfnode_t data_bits = b->bzet[loc];
+    halfnode_t tree_bits = b->bzet[loc + 1];
+
+    // Print offset if any
+    if (pad) {
+        // First 3 spaces to align with XXL level byte
+        // (sizeof(halfnode_t) + 3)*offset for spaces an internal node takes up
+        //     sizeof(halfnode_t) - number of bytes printed out
+        //     3 - "pretty" part: [?-?]
+        int blanks = 3 + (sizeof(halfnode_t) + 3) * offset + stdOffset;
+        for (int j = 0; j < blanks; j++)
+            fprintf(target, " ");
+    }
+
+    // If depth is 0 or no tree bits are set, this is a data node
+    if (depth == 0 || !tree_bits) {
+        fprintf(target, "D(%.*X)\n", sizeof(halfnode_t), data_bits);
+    }
+    // Otherwise this is a tree node
+    else {     
+        // Print the current node
+        fprintf(target, "[%.*X-%.*X]", sizeof(halfnode_t), data_bits, 
+            sizeof(halfnode_t), tree_bits);
+
+        // Recursively print subtrees
+        bool firstNode = true;
+        depth--;
+        for (int i = NODE_ELS - 1; i >= 0; i--) {
+            // TODO: Use popcount
+            // If tree bit set
+            if ((tree_bits >> i) & 0x1) {
+                // Print first node without offset
+                if (firstNode) {
+                    _printBzet(b, stdOffset, target, depth, loc + 1, offset + 1);
+                    firstNode = false;
+                } 
+                else {
+                    _printBzet(b, stdOffset, target, depth, stepThrough(b, loc + 1), offset + 1, true);
+                    loc = stepThrough(b, loc + 1) - 1;
+                }
+            }
+        }
+    }
+}
+
 void align(BZET_PTR b1, BZET_PTR b2);
 void normalize(BZET_PTR b);
-size_t stepThrough(BZET_PTR b, size_t loc);
+
+size_t stepThrough(BZET_PTR b, size_t loc) {
+    // Make sure loc is in range
+    if (loc >= b->nhalfnodes)
+        return -1;
+
+    // Get step offset
+    unsigned char step_offset = b->step[loc];
+
+    // If the step offset is 0, the offset is too large to be actually stored
+    // Compute it by examining the step of subtrees stemming from this node
+    if (step_offset == 0) {
+        // Get node tree bits
+        unsigned char tree_bits = b->bzet[loc + 1];
+
+        // Advance to location of first subtree node
+        loc++;
+
+        // Step through each subtree
+        // TODO: Performance gain by using popcount
+        for (int i = NODE_ELS - 1; i >= 0; i--) {
+            if ((tree_bits >> i) & 1)
+                loc = stepThrough(b, loc);
+        }
+
+        return loc;
+    }
+
+    // Step offset is nonzero, just add it loc and return it
+    return loc + step_offset;
+}
 
 void subtreeNot(BZET_PTR b, size_t loc, int depth) {
+    // Check if loc is in range
     if (loc >= b->nhalfnodes)
         return;
 
@@ -830,11 +928,12 @@ void subtreeNot(BZET_PTR b, size_t loc, int depth) {
     halfnode_t tree_bits = b->bzet[loc + 1];
 
     // Make result data bits by bitwise NOT and dusting with tree bits
-    halfnode_t result_data_bits = ~data_bits & ~tree_bits;
+    // and replace old data bits with it
+    b->bzet[loc] = ~data_bits & ~tree_bits;
 
     // Repeat recursively for all subtrees
     loc++;
-    // TODO: Performance gain by using popcount
+    // TODO: Performance gain by using popcount for tree bits
     for (int i = 0; i < NODE_ELS; i++) {
         if ((tree_bits >> i) & 1)
             subtreeNot(b, loc, depth - 1);
