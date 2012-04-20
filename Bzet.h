@@ -16,7 +16,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 #include <assert.h>
@@ -36,7 +35,10 @@
 #define STRINGIFY_(x) #x
 #define STRINGIFY(x) STRINGIFY_(x)
 
+#ifndef BZET
 #define BZET PASTE(Bzet, NODE_ELS)
+#endif
+
 #define BZET_PTR BZET *
 #define BZET_FUNC(x) PASTE_UNDER(BZET, x)
 #define POW PASTE(pow, NODE_ELS)
@@ -158,7 +160,7 @@ EXPORT_TAGS BZET_PTR BZET_FUNC(XOR)(BZET_PTR left, BZET_PTR right);
 
 // Bzet_COMPARE(left, right)
 // Test for equality between two bzets
-EXPORT_TAGS BZET_PTR BZET_FUNC(COMPARE)(BZET_PTR left, BZET_PTR right);
+EXPORT_TAGS bool BZET_FUNC(COMPARE)(BZET_PTR left, BZET_PTR right);
 
 // Bzet_binop(left, right, op)
 // Generic binary operations
@@ -261,22 +263,23 @@ void display_error(char* message, bool fatal = false, FILE* output = stderr) {
 }
 
 // Common Bzet constructor initialization
+// TODO: Add error messages
 inline 
-BZET_PTR init() {
+BZET_PTR init(size_t initial_alloc = INITIAL_ALLOC) {
     // Allocate bzet struct
     BZET_PTR b = (BZET_PTR) malloc(sizeof(BZET));
     if (!b)
         return NULL;
 
     // Allocate bzet node array
-    b->bzet = (halfnode_t*) malloc(INITIAL_ALLOC * sizeof(halfnode_t));
+    b->bzet = (halfnode_t*) malloc(initial_alloc * sizeof(halfnode_t));
     if (!b->bzet) {
         free(b);
         return NULL;
     }
 
     // Allocate step array
-    b->step = (unsigned char*) malloc(INITIAL_ALLOC * sizeof(unsigned char));
+    b->step = (unsigned char*) malloc(initial_alloc * sizeof(unsigned char));
     if (!b->step) {
         free(b);
         free(b->bzet);
@@ -627,14 +630,14 @@ BZET_PTR BZET_FUNC(NOT)(BZET_PTR b) {
         return NULL;
 
     // Create a clone of b
-    BZET_PTR not = BZET_FUNC(clone)(b);
-    if (!not)
+    BZET_PTR n = BZET_FUNC(clone)(b);
+    if (!n)
         return NULL;
 
     // NOT it in place
-    BZET_FUNC(INVERT)(not);
+    BZET_FUNC(INVERT)(n);
 
-    return not;
+    return n;
 }
 
 // Bzet_INVERT(b)
@@ -655,7 +658,13 @@ BZET_PTR BZET_FUNC(AND)(BZET_PTR left, BZET_PTR right);
 BZET_PTR BZET_FUNC(XOR)(BZET_PTR left, BZET_PTR right);
 
 // Bzet_COMPARE(left, right)
-BZET_PTR BZET_FUNC(COMPARE)(BZET_PTR left, BZET_PTR right);
+bool BZET_FUNC(COMPARE)(BZET_PTR left, BZET_PTR right) {
+    if (left->depth != right->depth || left->nhalfnodes != right->nhalfnodes ||
+        memcmp(left->bzet, right->bzet, left->nhalfnodes * sizeof(halfnode_t)))
+        return false;
+
+    return true;
+}
 
 // Bzet_binop(left, right, op)
 BZET_PTR BZET_FUNC(binop)(BZET_PTR left, BZET_PTR right);
