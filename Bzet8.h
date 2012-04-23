@@ -50,6 +50,7 @@ class Bzet8 {
         bool empty() { BZET_FUNC(EMPTY)(m_bzet); }
         void clear() { BZET_FUNC(CLEAN)(m_bzet); }
         
+        
     private:
         BZET_PTR m_bzet;
 }

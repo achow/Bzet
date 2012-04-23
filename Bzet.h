@@ -72,7 +72,7 @@ enum OP {
     OP_1000, OP_1001, OP_1010, OP_1011, OP_1100, OP_1101, OP_1110, OP_1111,
     AND = 1, XOR = 6, OR = 7, NOR = 8, NOT = 10, NAND = 14 };
 enum ACTION { DA0, DA1, DB0, DB1, CA, CB, NA, NB };
-enum NODETYPE { SATURATED, EMPTY, NORMAL };
+enum NODETYPE { SATURATED, EMPTY, NORMAL, LITERAL };
 
 static const ACTION optable[64] = {       
         DB0, DA0, DB0, DA0 , //00 0000 FALSE   Result
@@ -231,6 +231,10 @@ EXPORT_TAGS int64_t BZET_FUNC(getBits)(BZET_PTR b, int64_t* bits, int64_t limit 
 
 // Auxiliary functions
 
+// Creates a bzet from specified data
+BZET_PTR bitstobzet(void *data, size_t len);
+void treetobits(unsigned char *buf, halfnode_t *node, int depth);
+
 NODETYPE _binop(BZET_PTR left, BZET_PTR right, OP op, int lev, size_t left_loc = 1, size_t right_loc = 1, size_t loc = 1);
 
 // Recursively print the bzet in "pretty print"
@@ -246,7 +250,7 @@ void normalize(BZET_PTR b);
 size_t stepThrough(BZET_PTR b, size_t loc);
 
 // In-place bitwise NOT of the subtree whose root is at loc
-void subtreeNot(BZET_PTR b, size_t loc, int depth);
+void subtree_not(BZET_PTR b, size_t loc, int depth);
 
 
 // Inline auxiliary functions
@@ -464,7 +468,7 @@ BZET_PTR BZET_FUNC(new)(int64_t bit) {
 
     // Build depth
     int depth = 0;
-    while (POW(depth + 1) < (size_t) bit)
+    while (POW(depth + 1) <= (size_t) bit)
         depth++;
 
     // Resize to accomodate full bzet
@@ -474,6 +478,7 @@ BZET_PTR BZET_FUNC(new)(int64_t bit) {
     b->depth = (unsigned char) depth;
 
     // Set level 0 data node
+    // Each depth contains 2 halfnodes, b->bzet[2*depth] is the data node
     b->bzet[2*depth] = (halfnode_t) 0x1 << (NODE_ELS - 1 - (bit % NODE_ELS));
 
     // Zero out other nodes, since we will be only filling the tree portions next
@@ -485,7 +490,7 @@ BZET_PTR BZET_FUNC(new)(int64_t bit) {
         size_t cpow = POW(i);
 
         // Calculate tree bit to set
-        int setbit = (int) (bit / cpow);
+        int setbit = (int) (bit / cpow) % NODE_ELS;
 
         // Set the tree bit
         b->bzet[2*(depth - i) + 1] = (halfnode_t) 0x1 << (NODE_ELS - 1 - setbit);
@@ -503,6 +508,8 @@ BZET_PTR BZET_FUNC(new)(int64_t bit) {
 #if (defined _DEBUG || defined DEBUG)
     validateBzet();
 #endif
+
+    return b;
 }
 
 // Bzet_new(startbit, len)
@@ -599,29 +606,15 @@ void BZET_FUNC(setequal)(BZET_PTR left, BZET_PTR right) {
     if (!left || !right)
         return;
 
-    // Allocate new bzet and step
-    halfnode_t *bzet_temp = (halfnode_t *) malloc(right->nbufhalfnodes * sizeof(halfnode_t));
-    if (!bzet_temp)
-        return;
+    // Resize left's bzet and step buffers
+    resize(left, right->nhalfnodes);
 
-    unsigned char *step_temp = (unsigned char *) malloc(right->nbufhalfnodes * sizeof(unsigned char));
-    if (!step_temp) {
-        free(bzet_temp);
-        return;
-    }
-
-    // Free existing bzet and step
-    free(left->bzet);
-    free(left->step);
-
-    // Copy contents of bzet and step over
-    memcpy(left->bzet, right->bzet, left->nhalfnodes * sizeof(halfnode_t));
-    memcpy(left->step, right->step, left->nhalfnodes * sizeof(unsigned char));
-
-    // Copy other fields over
+    // Copy contents of bzet over
     left->depth = right->depth;
     left->nbufhalfnodes = right->nbufhalfnodes;
     left->nhalfnodes = right->nhalfnodes;
+    memcpy(left->bzet, right->bzet, left->nhalfnodes * sizeof(halfnode_t));
+    memcpy(left->step, right->step, left->nhalfnodes * sizeof(unsigned char));
 }
 
 // Bzet_NOT(b)
@@ -645,17 +638,20 @@ void BZET_FUNC(INVERT)(BZET_PTR b) {
     if (!b)
         return;
 
-    subtreeNot(b, 0, b->depth);
+    subtree_not(b, 0, b->depth);
 }
 
 // Bzet_OR(left, right)
-BZET_PTR BZET_FUNC(OR)(BZET_PTR left, BZET_PTR right);
+BZET_PTR BZET_FUNC(OR)(BZET_PTR left, BZET_PTR right) {
+}
 
 // Bzet_AND(left, right)
-BZET_PTR BZET_FUNC(AND)(BZET_PTR left, BZET_PTR right);
+BZET_PTR BZET_FUNC(AND)(BZET_PTR left, BZET_PTR right) {
+}
 
 // Bzet_XOR(left, right)
-BZET_PTR BZET_FUNC(XOR)(BZET_PTR left, BZET_PTR right);
+BZET_PTR BZET_FUNC(XOR)(BZET_PTR left, BZET_PTR right) {
+}
 
 // Bzet_COMPARE(left, right)
 bool BZET_FUNC(COMPARE)(BZET_PTR left, BZET_PTR right) {
@@ -824,6 +820,188 @@ int64_t BZET_FUNC(getBits)(BZET_PTR b, int64_t* bits, int64_t limit, int64_t sta
 
 // Auxiliary functions
 
+/*BZET_PTR bitstobzet(void *data, size_t len) {
+    unsigned char *bytes = (unsigned char *) data;
+
+    // Find depth required to store len bytes
+    int depth = 0;
+    while (len * 8 < PASTE(pow, NODE_ELS)(depth + 1))
+        depth++;
+
+    // Create a bzet with initial alloc of maximum required buffers
+    // b->nhalfnodes at this point is 0
+    BZET_PTR b = init(depth / sizeof(halfnode_t) + 1);
+
+    // Set actual depth
+    b->depth = depth;
+
+
+}*/
+
+NODETYPE bitstotree(BZET_PTR b, int depth, unsigned char *data, size_t len) {
+    if (len < PASTE(pow, NODE_ELS)(depth) / 8)
+        return EMPTY;
+
+    // If a level 0 node is to be created
+    if (depth == 0) {
+        // Build a level 0 data node
+        halfnode_t data_node = 0;
+        for (int i = 0; i < sizeof(halfnode_t); i++)
+            data_node = (data_node << 8) | data[i];
+
+        // If data node is saturated
+        if (data_node == (halfnode_t) -1)
+            return SATURATED;
+        // If data node is empty
+        else if (data_node == 0)
+            return EMPTY;
+        // Otherwise commit to bzet
+        else {
+            b->bzet[b->nhalfnodes] = data_node;
+            b->step[b->nhalfnodes] = 1;
+            b->nhalfnodes++;
+            return NORMAL;
+        }
+    }
+
+    // Create nodes
+    halfnode_t data_bits = 0, tree_bits = 0;
+    
+    // Reserve space for nodes and cache location
+    size_t loc = b->nhalfnodes;
+    b->nhalfnodes += 2;
+
+    // Build subtrees
+    size_t subtree_size = PASTE(pow, NODE_ELS)(depth - 1) / 8;
+    for (int i = 0; i < NODE_ELS; i++) {
+        // Recurse
+        NODETYPE ret = bitstotree(b, depth - 1, data, len);
+
+        // Modify data and len as necessary
+        data += subtree_size;
+        len -= subtree_size;
+
+        // If subtree built was empty
+        if (ret == EMPTY) {
+            // Nothing to do, bits are already set to 0
+        }
+        // If subtree was saturated
+        else if (ret == SATURATED) {
+            // Set data bit
+            data_bits = (data_bits << 1) | 0x1;
+        }
+        // If subtree was a data literal
+        else if (ret == LITERAL) {
+            // Set data and tree bit
+            data_bits = (data_bits << 1) | 0x1;
+            tree_bits = (tree_bits << 1) | 0x1;
+        }
+        // Otherwise it is a normal tree node
+        else {
+            // Set tree bit
+            tree_bits = (tree_bits << 1) | 0x1;
+        }
+    }
+
+    // If a literal subtree is smaller than the formed tree
+    if ((b->nhalfnodes - loc) * sizeof(halfnode_t) >= PASTE(pow, NODE_ELS)(depth + 1)) {
+        size_t locstart = loc;
+        unsigned char *buf = (unsigned char *) malloc(PASTE(pow, NODE_ELS)(depth + 1) * sizeof(halfnode_t));
+        // TODO: More elegant error handling
+        if (!buf)
+            display_error("malloc failed in bitstotree", true);
+
+        // Convert tree to bytes
+        treetobits(buf, b->bzet + loc, depth);
+
+        unsigned char *bufptr = buf;
+
+        // Write back as necessary
+        // For each halfnode's worth
+        for (int i = 0; i < PASTE(pow, NODE_ELS)(depth + 1) / sizeof(halfnode_t); i++) {
+            // Copy to satisfy byte ordering
+            halfnode_t node = 0;
+            for (int j = 0; j < sizeof(halfnode_t); j++) {
+                node |= bufptr[0];
+                bufptr++;
+            }
+            b->bzet[loc] = node;
+            loc++;
+        }
+
+        // Shrink size
+        b->nhalfnodes = loc;
+
+        // Set step
+        b->step[locstart] = b->nhalfnodes - locstart;
+
+        return LITERAL;
+    }
+
+    // Write nodes
+    b->bzet[loc] = data_bits;
+    b->bzet[loc + 1] = tree_bits;
+
+    // Set step
+    b->step[loc] = b->nhalfnodes - loc;
+
+    return NORMAL;
+}
+
+void treetobits(unsigned char *buf, halfnode_t *node, int depth) {
+    // If depth is 0, we already have a data literal
+    if (depth == 0) {
+        // Work byte by byte to write to buffer in big endian
+        halfnode_t data_node = node[0];
+        for (int i = 0; i < sizeof(halfnode_t); i++) {
+            buf[i] = data_node & ((halfnode_t) -1);
+            data_node <<= 8;
+        }
+
+        return;
+    }
+
+    // Otherwise we have a subtree to traverse
+    halfnode_t data_bits = node[0];
+    halfnode_t tree_bits = node[1];
+    node += 2;
+
+    // Work through each subtree
+    for (int i = 0; i < sizeof(halfnode_t) * 8; i++) {
+        bool data_bit = (data_bits << i) & 0x1;
+        bool tree_bit = (tree_bits << i) & 0x1;
+
+        // If there is a subtree
+        if (tree_bit && !data_bit)
+            treetobits(buf, node, depth - 1);
+        // If there is a data literal subtree
+        else if (tree_bit && data_bit) {
+            // Work byte by byte to write to buffer in big endian
+            size_t nodes = PASTE(pow, NODE_ELS)(depth - 1) / 8 / sizeof(halfnode_t);
+            // For each node
+            for (int j = 0; j < nodes; j++) {
+                halfnode_t data = node[j];
+                // For each byte
+                for (int k = 0; k < sizeof(halfnode_t); k++) {
+                    buf[0] = data & 0xFF;
+                    buf++;
+                    data >>= 8;
+                }
+            }
+        }
+        // If this element is saturated
+        else if (data_bit) {
+            memset(buf, 0xFF, PASTE(pow, NODE_ELS)(depth - 1) / 8);
+            buf += PASTE(pow, NODE_ELS)(depth - 1) / 8;
+        }
+        // Otherwise this element is empty
+        else {
+            memset(buf, 0x00, PASTE(pow, NODE_ELS)(depth - 1) / 8);
+            buf += PASTE(pow, NODE_ELS)(depth - 1) / 8;
+        }
+    }
+}
+
 NODETYPE _binop(BZET_PTR left, BZET_PTR right, OP op, int lev, size_t left_loc, size_t right_loc, size_t loc);
 
 void _printBzet(BZET_PTR b, int stdOffset, FILE* target, int depth, size_t loc, int offset, bool pad) {
@@ -849,20 +1027,20 @@ void _printBzet(BZET_PTR b, int stdOffset, FILE* target, int depth, size_t loc, 
         // (sizeof(halfnode_t) + 3)*offset for spaces an internal node takes up
         //     sizeof(halfnode_t) - number of bytes printed out
         //     3 - "pretty" part: [?-?]
-        int blanks = 3 + (sizeof(halfnode_t) + 3) * offset + stdOffset;
+        int blanks = 3 + (sizeof(halfnode_t) * 2 + 3) * offset + stdOffset;
         for (int j = 0; j < blanks; j++)
             fprintf(target, " ");
     }
 
     // If depth is 0 or no tree bits are set, this is a data node
     if (depth == 0 || !tree_bits) {
-        fprintf(target, "D(%.*X)\n", sizeof(halfnode_t), data_bits);
+        fprintf(target, "D(%.*X)\n", sizeof(halfnode_t) * 2, data_bits);
     }
     // Otherwise this is a tree node
     else {     
         // Print the current node
-        fprintf(target, "[%.*X-%.*X]", sizeof(halfnode_t), data_bits, 
-            sizeof(halfnode_t), tree_bits);
+        fprintf(target, "[%.*X-%.*X]", sizeof(halfnode_t) * 2, data_bits, 
+            sizeof(halfnode_t) * 2, tree_bits);
 
         // Recursively print subtrees
         bool firstNode = true;
@@ -873,12 +1051,12 @@ void _printBzet(BZET_PTR b, int stdOffset, FILE* target, int depth, size_t loc, 
             if ((tree_bits >> i) & 0x1) {
                 // Print first node without offset
                 if (firstNode) {
-                    _printBzet(b, stdOffset, target, depth, loc + 1, offset + 1);
+                    _printBzet(b, stdOffset, target, depth, loc + 2, offset + 1);
                     firstNode = false;
                 } 
                 else {
-                    _printBzet(b, stdOffset, target, depth, stepThrough(b, loc + 1), offset + 1, true);
-                    loc = stepThrough(b, loc + 1) - 1;
+                    _printBzet(b, stdOffset, target, depth, stepThrough(b, loc + 2), offset + 1, true);
+                    loc = stepThrough(b, loc + 2) - 1;
                 }
             }
         }
@@ -919,7 +1097,7 @@ size_t stepThrough(BZET_PTR b, size_t loc) {
     return loc + step_offset;
 }
 
-void subtreeNot(BZET_PTR b, size_t loc, int depth) {
+void subtree_not(BZET_PTR b, size_t loc, int depth) {
     // Check if loc is in range
     if (loc >= b->nhalfnodes)
         return;
@@ -936,18 +1114,32 @@ void subtreeNot(BZET_PTR b, size_t loc, int depth) {
     halfnode_t data_bits = b->bzet[loc];
     halfnode_t tree_bits = b->bzet[loc + 1];
 
-    // Make result data bits by bitwise NOT and dusting with tree bits
-    // and replace old data bits with it
-    b->bzet[loc] = ~data_bits & ~tree_bits;
+    // Make result data bits by bitwise NOT
+    b->bzet[loc] = (~data_bits & ~tree_bits) | data_bits & tree_bits;
 
     // Repeat recursively for all subtrees
-    loc++;
+    loc += 2;
     // TODO: Performance gain by using popcount for tree bits
     for (int i = 0; i < NODE_ELS; i++) {
-        if ((tree_bits >> i) & 1)
-            subtreeNot(b, loc, depth - 1);
+        // If tree bit set
+        if ((tree_bits >> i) & 1) {
+            // If subtree is in tree form
+            if (((data_bits >> i) & 1) == 0) {
+                subtree_not(b, loc, depth - 1);
+                loc = stepThrough(b, loc);
+            }
+            // If subtree is in literal form
+            else {
+                // Get number of halfnodes 
+                int nnodes = PASTE(pow, NODE_ELS)(depth - 1) / 8 / sizeof(halfnode_t);
 
-        loc = stepThrough(b, loc);
+                // NOT each halfnode
+                for (int i = 0; i < nnodes; i++) {
+                    b->bzet[loc] = ~b->bzet[loc];
+                    loc++;
+                }
+            }
+        }
     }
 }
 
