@@ -99,7 +99,7 @@ typedef struct {
     size_t nbufhalfnodes;
     size_t nhalfnodes;
     halfnode_t* bzet; //points to the bzet
-    unsigned char* step; //points to an array that holds stepThrough values
+    unsigned char* step; //points to an array that holds step_through values
     unsigned char depth;
 } BZET;
 
@@ -235,7 +235,7 @@ EXPORT_TAGS int64_t BZET_FUNC(getBits)(BZET_PTR b, int64_t* bits, int64_t limit 
 BZET_PTR bitstobzet(void *data, size_t len);
 void treetobits(unsigned char *buf, halfnode_t *node, int depth);
 
-NODETYPE _binop(BZET_PTR left, BZET_PTR right, OP op, int lev, size_t left_loc = 1, size_t right_loc = 1, size_t loc = 1);
+NODETYPE _binop(BZET_PTR result, BZET_PTR left, BZET_PTR right, OP op, int lev, size_t left_loc = 1, size_t right_loc = 1);
 
 // Recursively print the bzet in "pretty print"
 void _printBzet(BZET_PTR b, int stdOffset, FILE* target, int depth, size_t loc = 0, int offset = 0, bool pad = 0);
@@ -247,7 +247,7 @@ void align(BZET_PTR b1, BZET_PTR b2);
 void normalize(BZET_PTR b);
 
 // Return the location of the next node after traversing the subtree starting at loc
-size_t stepThrough(BZET_PTR b, size_t loc);
+size_t step_through(BZET_PTR b, size_t loc);
 
 // In-place bitwise NOT of the subtree whose root is at loc
 void subtree_not(BZET_PTR b, size_t loc, int depth);
@@ -352,6 +352,23 @@ int do_data_op(OP op, int left_data_bit, int right_data_bit) {
     return (op >> (3 - (((int) left_data_bit << 1) | (int) right_data_bit))) & 0x1;
 }
 
+// Append a subtree from src to dest starting at loc in src
+inline
+void append_subtree(BZET_PTR dst, BZET_PTR src, size_t loc) {
+    if (!dst || !src)
+        return;
+
+    // Calculate copy size and cache copy destination
+    size_t copy_size = step_through(src, loc) - loc;
+    size_t dst_loc = dst->nhalfnodes;
+
+    // Resize dst to accomodate copy_size new elements
+    resize(dst, dst->nhalfnodes + copy_size);
+
+    // Do copy
+    memcpy(dst + dst_loc, src + loc, copy_size * sizeof(halfnode_t));
+}
+
 /*
 #if (defined _DEBUG || defined DEBUG)
         void printBytes(FILE* target = stdout) const;
@@ -363,7 +380,7 @@ int do_data_op(OP op, int left_data_bit, int right_data_bit) {
         static unsigned char dust(unsigned char x);
         int depthAt(size_t loc) const;
 
-        void appendSubtree(const Bzet4& src, size_t loc);
+        void append_subtree(const Bzet4& src, size_t loc);
         void dropNodes(size_t loc, int n);
 */
 
@@ -399,7 +416,7 @@ void Bzet4::validateBzet(size_t loc, int lev) {
             }
             assert(nextLoc + 1 >= 0 && nextLoc < b->size);
             validateBzet(nextLoc + 1, lev - 1);
-            nextLoc = stepThrough(nextLoc + 1) - 1;
+            nextLoc = step_through(nextLoc + 1) - 1;
         }
     }
 
@@ -643,14 +660,62 @@ void BZET_FUNC(INVERT)(BZET_PTR b) {
 
 // Bzet_OR(left, right)
 BZET_PTR BZET_FUNC(OR)(BZET_PTR left, BZET_PTR right) {
+    if (!left || !right)
+        return NULL;
+
+    // If left bzet is empty, the bitwise OR will be equal to the right bzet
+    if (left->nhalfnodes == 0)
+        return BZET_FUNC(clone)(right);
+    // If right bzet is empty, the bitwise OR will be equal to the left bzet
+    else if (right->nhalfnodes == 0)
+        return BZET_FUNC(clone)(left);
+    // Otherwise just operate on them
+    else {
+        align(left, right);
+        BZET_PTR result = BZET_FUNC(binop)(left, right, OR);
+        normalize(left);
+        normalize(right);
+        return result;
+    }
 }
 
 // Bzet_AND(left, right)
 BZET_PTR BZET_FUNC(AND)(BZET_PTR left, BZET_PTR right) {
+    if (!left || !right)
+        return NULL;
+
+    // If either bzet is empty, the bitwise AND will be an empty bzet
+    if (left->nhalfnodes == 0 || right->nhalfnodes == 0)
+        return BZET_FUNC(new)();
+    // Otherwise just operate on them
+    else {
+        align(left, right);
+        BZET_PTR result = BZET_FUNC(binop)(left, right, AND);
+        normalize(left);
+        normalize(right);
+        return result;
+    }
 }
 
 // Bzet_XOR(left, right)
 BZET_PTR BZET_FUNC(XOR)(BZET_PTR left, BZET_PTR right) {
+    if (!left || !right)
+        return NULL;
+
+    // If left bzet is empty, the bitwise XOR will be equal to the right bzet
+    if (left->nhalfnodes == 0)
+        return BZET_FUNC(clone)(right);
+    // If right bzet is empty, the bitwise XOR will be equal to the left bzet
+    else if (right->nhalfnodes == 0)
+        return BZET_FUNC(clone)(left);
+    // Otherwise just operate on them
+    else {
+        align(left, right);
+        BZET_PTR result = BZET_FUNC(binop)(left, right, XOR);
+        normalize(left);
+        normalize(right);
+        return result;
+    }
 }
 
 // Bzet_COMPARE(left, right)
@@ -663,7 +728,14 @@ bool BZET_FUNC(COMPARE)(BZET_PTR left, BZET_PTR right) {
 }
 
 // Bzet_binop(left, right, op)
-BZET_PTR BZET_FUNC(binop)(BZET_PTR left, BZET_PTR right);
+BZET_PTR BZET_FUNC(binop)(BZET_PTR left, BZET_PTR right, OP op) {
+    if (!left || !right)
+        return NULL;
+
+    BZET_PTR result = BZET_FUNC(new)();
+    _binop(result, left, right, op, left->depth);
+    return result;
+}
 
 
 // Bzet_TEST(b, bit)
@@ -696,7 +768,36 @@ bool BZET_FUNC(TEST)(BZET_PTR b, int64_t bit) {
 }
 
 // Bzet_RANGE(b, start, len)
-void BZET_FUNC(RANGE)(BZET_PTR b, int64_t start, int64_t len);
+void BZET_FUNC(RANGE)(BZET_PTR b, int64_t start, int64_t len) {
+    if (!b)
+        return;
+
+    // Create bzet mask
+    BZET_PTR mask = BZET_FUNC(new)();
+    if (!mask)
+        // TODO: Add error message
+        return;
+
+    for (int64_t i = start; i < start + len; i++)
+        BZET_FUNC(SET)(mask, start);
+
+    // OR the mask into the original bzet
+    BZET_PTR result = BZET_FUNC(OR)(b, mask);
+    if (!result) {
+        // TODO: Add error message
+        BZET_FUNC(destroy)(mask);
+        return;
+    }
+    
+    // Free the mask
+    BZET_FUNC(destroy)(mask);
+
+    // Gut result and give its internals to b
+    free(b->bzet);
+    free(b->step);
+    memcpy(b, result, sizeof(BZET));
+    free(result);
+}
 
 // Bzet_SET(bit)
 void BZET_FUNC(SET)(BZET_PTR b, int64_t bit) {
@@ -869,7 +970,7 @@ NODETYPE bitstotree(BZET_PTR b, int depth, unsigned char *data, size_t len) {
     
     // Reserve space for nodes and cache location
     size_t loc = b->nhalfnodes;
-    b->nhalfnodes += 2;
+    resize(b, b->nhalfnodes + 2);
 
     // Build subtrees
     size_t subtree_size = PASTE(pow, NODE_ELS)(depth - 1) / 8;
@@ -930,10 +1031,13 @@ NODETYPE bitstotree(BZET_PTR b, int depth, unsigned char *data, size_t len) {
         }
 
         // Shrink size
-        b->nhalfnodes = loc;
+        resize(b, loc);
 
         // Set step
-        b->step[locstart] = b->nhalfnodes - locstart;
+        if (b->nhalfnodes - locstart > 255)
+            b->step[locstart] = 0;
+        else
+            b->step[locstart] = (unsigned char) (b->nhalfnodes - locstart);
 
         return LITERAL;
     }
@@ -943,7 +1047,10 @@ NODETYPE bitstotree(BZET_PTR b, int depth, unsigned char *data, size_t len) {
     b->bzet[loc + 1] = tree_bits;
 
     // Set step
-    b->step[loc] = b->nhalfnodes - loc;
+    if (b->nhalfnodes - loc > 255)
+        b->step[loc] = 0;
+    else
+        b->step[loc] = (unsigned char) (b->nhalfnodes - loc);
 
     return NORMAL;
 }
@@ -1002,7 +1109,258 @@ void treetobits(unsigned char *buf, halfnode_t *node, int depth) {
     }
 }
 
-NODETYPE _binop(BZET_PTR left, BZET_PTR right, OP op, int lev, size_t left_loc, size_t right_loc, size_t loc);
+NODETYPE _binop(BZET_PTR result, BZET_PTR left, BZET_PTR right, OP op, 
+                int lev, size_t left_loc, size_t right_loc) {
+    // Get corresponding nodes of the left and right tree
+    halfnode_t c_left_data = left->bzet[left_loc];
+    halfnode_t c_left_tree = left->bzet[left_loc + 1];
+    halfnode_t c_right_data = right->bzet[right_loc];
+    halfnode_t c_right_tree = right->bzet[right_loc];
+
+    // Create new node to hold data
+    halfnode_t node_data = 0;
+    halfnode_t node_tree = 0;
+
+    // Reserve space for this node
+    size_t loc = result->nhalfnodes;
+    resize(result, result->nhalfnodes + 2);
+
+    // For each element in the node
+    for (int i = NODE_ELS - 1; i >= 0; --i) {
+        int cur_left_tree_bit = (c_left_tree >> i) & 0x1;
+        int cur_left_data_bit = (c_left_data >> (i + NODE_ELS)) & 0x1;
+        int cur_right_tree_bit = (c_right_tree >> i) & 0x1;
+        int cur_right_data_bit = (c_right_data >> (i + NODE_ELS)) & 0x1;
+ 
+        // TT: If both tree bits are on
+        if (cur_left_tree_bit && cur_right_tree_bit) {
+            // TODO: Handling for data literal operations
+            // If both corresponding subtrees are data literals
+            if (cur_left_data_bit && cur_left_tree_bit) {
+            }
+            // If left subtree is a data literal and right is not
+            else if (cur_left_data_bit) {
+            }
+            // If right subtree is a data literal and left is not
+            else if (cur_right_data_bit) {
+            }
+            // Otherwise both subtrees are actual trees
+            else {
+                // Recurse
+                NODETYPE cn = _binop(result, left, right, op, lev - 1, left_loc + 2, right_loc + 2);
+
+                // Saturated subtree
+                if (cn == SATURATED) {
+                    // Turn on data bit
+                    node_data = (node_data << 1) | 0x1;
+                    node_tree <<= 1;
+                }
+                // Empty subtree
+                else if (cn == EMPTY) {
+                    // Shift data and tree nodes over
+                    node_data <<= 1;
+                    node_tree <<= 1;
+                }
+                // "Tree" subtree
+                else if (cn == NORMAL) {
+                    // Turn on tree bit
+                    node_data <<= 1;
+                    node_tree = (node_tree << 1) | 0x1;
+                }
+                // Otherwise data literal subtree
+                else {
+                    // TODO: Handle data literal subtree
+                }
+
+                // Advance location pointers
+                left_loc = step_through(left, left_loc + 2) - 2;
+                right_loc = step_through(right, right_loc + 2) - 2;
+            }
+        } 
+        // ?T or T?: If only one of the tree bits are on
+        else if (cur_left_tree_bit || cur_right_tree_bit) {
+            // Look up action from optable
+            ACTION action;
+            // ?T
+            if (cur_right_tree_bit) {
+                // 1T
+                if (cur_left_data_bit)
+                    action = optable[(op << 2) + 2];
+                // 0T
+                else
+                    action = optable[op << 2];
+            }
+            // T?
+            else {
+                // T1
+                if (cur_right_data_bit)
+                    action = optable[(op << 2) + 3];
+                // T0
+                else
+                    action = optable[(op << 2) + 1];
+            }
+
+            // Used for NA and NB actions
+            size_t end;
+
+            // Execute action
+            switch (action) {
+                // Delete left subtree, set data bit off
+                case DA0:
+                    // Skip the left subtree
+                    left_loc = step_through(left, left_loc + 2) - 2;
+
+                    // Data bit is already 0
+                    node_data <<= 1;
+                    node_tree <<= 1;
+
+                    break;
+
+                // Delete right subtree, set data bit off
+                case DB0:
+                    // Skip the right subtree
+                    right_loc = step_through(right, right_loc + 2) - 2;
+
+                    // Data bit is already 0
+                    node_data <<= 1;
+                    node_tree <<= 1;
+
+                    break;
+
+                // Delete left subtree, set data bit on
+                case DA1: 
+                    // Skip the left subtree
+                    left_loc = step_through(left, left_loc + 2) - 2;
+
+                    // Turn on data bit
+                    node_data = (node_data << 1) | 0x1;
+                    node_tree <<= 1;
+
+                    break;
+
+                // Delete right subtree, set data bit on
+                case DB1:
+                    // Skip the right subtree
+                    right_loc = step_through(right, right_loc + 2) - 2;
+
+                    // Turn on data bit
+                    node_data = (node_data << 1) | 0x1;
+                    node_tree <<= 1;
+
+                    break;
+
+                // Copy left subtree into result
+                case CA: 
+                    // Append left subtree
+                    append_subtree(result, left, left_loc + 2);
+
+                    // Move through left subtree
+                    left_loc = step_through(left, left_loc + 2) - 2;
+
+                    // Turn on tree bit
+                    node_data <<= 1;
+                    node_tree = (node_tree << 1) | 0x1;
+
+                    break;
+
+                // Copy right subtree into result
+                case CB:
+                    // Append left subtree
+                    append_subtree(result, left, left_loc + 2);
+
+                    // Move through left subtree
+                    left_loc = step_through(left, left_loc + 2) - 2;
+
+                    // Turn on tree bit
+                    node_data <<= 1;
+                    node_tree = (node_tree << 1) | 0x1;
+
+                    break;
+
+                // Copy left subtree into result and negate
+                case NA:
+                    end = result->nhalfnodes;
+
+                    // Append left subtree
+                    append_subtree(result, left, left_loc + 2);
+
+                    // Negate
+                    subtree_not(result, end, lev - 1);
+
+                    // Move through left subtree
+                    left_loc = step_through(left, left_loc + 2) - 2;
+
+                    // Turn on tree bit
+                    node_data <<= 1;
+                    node_tree = (node_tree << 1) | 0x1;
+
+                    break;
+
+                // Copy right subtree into result and negate
+                case NB:
+                    end = result->nhalfnodes;
+
+                    // Append right subtree
+                    append_subtree(result, right, right_loc + 2);
+
+                    // Negate
+                    subtree_not(result, end, lev - 1);
+
+                    // Move through left subtree
+                    left_loc = step_through(right, right_loc + 2) - 2;
+
+                    // Turn on tree bit
+                    node_data <<= 1;
+                    node_tree = (node_tree << 1) | 0x1;
+                    break;
+
+                default:
+                    // Should be impossible to get here, but just in case?
+                    display_error("Bzet4::_binop: Something went terribly, terribly wrong", true);
+                    break;
+            }
+        } 
+        // Only data bits
+        else /*if (!cur_left_tree_bit && !cur_right_tree_bit)*/ {
+            // Shift in data bit
+            node_data = (node_data << 1) | do_data_op(op, cur_left_data_bit, cur_right_data_bit);
+            node_tree <<= 1;
+        }
+    }
+
+    // Write nodes
+    result->bzet[loc] = node_data;
+    result->bzet[loc + 1] = node_tree;
+
+    // Set step
+    if (result->nhalfnodes - loc > 255)
+        result->step[loc] = 0;
+    else 
+        result->step[loc] = (unsigned char) (result->nhalfnodes - loc);
+
+    // If resulting node is empty
+    if (node_tree == 0 && node_data == 0) {
+        // Drop newly committed node if not root node
+        if (result->nhalfnodes > 2)
+            resize(result, result->nhalfnodes - 2);
+        return EMPTY;
+    }
+    // If resulting node is saturated
+    else if (node_tree == 0 && node_data == (halfnode_t) -1) {
+        // Drop newly committed node if not root node
+        if (result->nhalfnodes > 2)
+            resize(result, result->nhalfnodes - 2);
+        return SATURATED;
+    }
+
+    // TODO: See if collapsible to bit literal
+
+#if (defined _DEBUG || defined DEBUG)
+    assert(dust(m_bzet[loc]) == m_bzet[loc]);
+#endif
+
+    return NORMAL;
+}
 
 void _printBzet(BZET_PTR b, int stdOffset, FILE* target, int depth, size_t loc, int offset, bool pad) {
     // Print level info
@@ -1055,18 +1413,108 @@ void _printBzet(BZET_PTR b, int stdOffset, FILE* target, int depth, size_t loc, 
                     firstNode = false;
                 } 
                 else {
-                    _printBzet(b, stdOffset, target, depth, stepThrough(b, loc + 2), offset + 1, true);
-                    loc = stepThrough(b, loc + 2) - 1;
+                    _printBzet(b, stdOffset, target, depth, step_through(b, loc + 2), offset + 1, true);
+                    loc = step_through(b, loc + 2) - 1;
                 }
             }
         }
     }
 }
 
-void align(BZET_PTR b1, BZET_PTR b2);
-void normalize(BZET_PTR b);
+void align(BZET_PTR b1, BZET_PTR b2) {
+    if (!b1 || !b2)
+        return;
 
-size_t stepThrough(BZET_PTR b, size_t loc) {
+    // Get difference in depths
+    int diffdepth = abs(b1->depth - b2->depth);
+
+    // Nothing to be done if they are the same depth
+    if (diffdepth == 0)
+        return;
+
+    // If b2 needs to be grown
+    if (b1->depth > b2->depth) {
+        b2->depth = b1->depth;
+        size_t old_size = b2->nhalfnodes;
+
+        // Resize b2 to accommodate new heading nodes
+        resize(b2, b2->nhalfnodes + diffdepth * 2);
+
+        // Move bzet and step in b2 to accommodate new heading nodes
+        memmove(b2->bzet + diffdepth * 2, b2->bzet, old_size * sizeof(halfnode_t));
+        memmove(b2->step + diffdepth * 2, b2->step, old_size * sizeof(halfnode_t));
+
+        // Add new nodes and new step
+        size_t loc = 0;
+        for (int i = 0; i < diffdepth; i++) {
+            b2->bzet[loc] = 0;
+            b2->bzet[loc + 1] = (halfnode_t) (0x1 << (NODE_ELS - 1));
+
+            if (b2->nhalfnodes - loc > 255)
+                b2->step[loc] = 0;
+            else
+                b2->step[loc] = (unsigned char) (b2->nhalfnodes - loc);
+
+            loc += 2;
+        }
+    }
+    // Otherwise b1 needs to be grown
+    else {
+        b1->depth = b2->depth;
+        size_t old_size = b1->nhalfnodes;
+
+        // Resize b1 to accommodate new heading nodes
+        resize(b1, b1->nhalfnodes + diffdepth * 2);
+
+        // Move bzet and step in b1 to accommodate new heading nodes
+        memmove(b1->bzet + diffdepth * 2, b1->bzet, old_size * sizeof(halfnode_t));
+        memmove(b1->step + diffdepth * 2, b1->step, old_size * sizeof(halfnode_t));
+
+        // Add new nodes and new step
+        size_t loc = 0;
+        for (int i = 0; i < diffdepth; i++) {
+            b1->bzet[loc] = 0;
+            b1->bzet[loc + 1] = (halfnode_t) (0x1 << (NODE_ELS - 1));
+
+            if (b1->nhalfnodes - loc > 255)
+                b1->step[loc] = 0;
+            else
+                b1->step[loc] = (unsigned char) (b1->nhalfnodes - loc);
+
+            loc += 2;
+        }
+    }
+}
+
+void normalize(BZET_PTR b) {
+    if (!b)
+        return;
+
+    int leading = 0;
+    int loc = 0;
+    int depth = b->depth;
+    // Count leading nodes that can be stripped.
+    // This occurs when the data node is all zero and the leftmost tree bit is set
+    while (depth > 0 && b->bzet[loc] == 0 && 
+        b->bzet[loc + 1] == (halfnode_t) (0x1 << (NODE_ELS - 1))) {
+        leading++;
+        loc += 2;
+    }
+
+    // If there are leading nodes that can be stripped
+    if (leading) {
+        // Modify depth
+        b->depth -= leading;
+        // Move bzet
+        memmove(b->bzet, b->bzet + loc, loc * sizeof(b->bzet[0]));
+        // Move step
+        memmove(b->step, b->step + loc, loc * sizeof(b->step[0]));
+        // Resize
+        resize(b, b->nhalfnodes - loc);
+    }
+}
+
+size_t step_through(BZET_PTR b, size_t loc) {
     // Make sure loc is in range
     if (loc >= b->nhalfnodes)
         return -1;
@@ -1087,7 +1535,7 @@ size_t stepThrough(BZET_PTR b, size_t loc) {
         // TODO: Performance gain by using popcount
         for (int i = NODE_ELS - 1; i >= 0; i--) {
             if ((tree_bits >> i) & 1)
-                loc = stepThrough(b, loc);
+                loc = step_through(b, loc);
         }
 
         return loc;
@@ -1126,15 +1574,15 @@ void subtree_not(BZET_PTR b, size_t loc, int depth) {
             // If subtree is in tree form
             if (((data_bits >> i) & 1) == 0) {
                 subtree_not(b, loc, depth - 1);
-                loc = stepThrough(b, loc);
+                loc = step_through(b, loc);
             }
             // If subtree is in literal form
             else {
                 // Get number of halfnodes 
-                int nnodes = PASTE(pow, NODE_ELS)(depth - 1) / 8 / sizeof(halfnode_t);
+                size_t nnodes = PASTE(pow, NODE_ELS)(depth - 1) / 8 / sizeof(halfnode_t);
 
                 // NOT each halfnode
-                for (int i = 0; i < nnodes; i++) {
+                for (size_t i = 0; i < nnodes; i++) {
                     b->bzet[loc] = ~b->bzet[loc];
                     loc++;
                 }
