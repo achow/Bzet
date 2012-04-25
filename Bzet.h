@@ -235,7 +235,7 @@ EXPORT_TAGS int64_t BZET_FUNC(getBits)(BZET_PTR b, int64_t* bits, int64_t limit 
 BZET_PTR bitstobzet(void *data, size_t len);
 void treetobits(unsigned char *buf, halfnode_t *node, int depth);
 
-NODETYPE _binop(BZET_PTR result, BZET_PTR left, BZET_PTR right, OP op, int lev, size_t left_loc = 1, size_t right_loc = 1);
+NODETYPE _binop(BZET_PTR result, BZET_PTR left, BZET_PTR right, OP op, int lev, size_t left_loc = 0, size_t right_loc = 0);
 
 // Recursively print the bzet in "pretty print"
 void _printBzet(BZET_PTR b, int stdOffset, FILE* target, int depth, size_t loc = 0, int offset = 0, bool pad = 0);
@@ -366,7 +366,8 @@ void append_subtree(BZET_PTR dst, BZET_PTR src, size_t loc) {
     resize(dst, dst->nhalfnodes + copy_size);
 
     // Do copy
-    memcpy(dst + dst_loc, src + loc, copy_size * sizeof(halfnode_t));
+    memcpy(dst->bzet + dst_loc, src->bzet + loc, copy_size * sizeof(halfnode_t));
+    memcpy(dst->step + dst_loc, src->step + loc, copy_size * sizeof(unsigned char));
 }
 
 /*
@@ -734,6 +735,8 @@ BZET_PTR BZET_FUNC(binop)(BZET_PTR left, BZET_PTR right, OP op) {
 
     BZET_PTR result = BZET_FUNC(new)();
     _binop(result, left, right, op, left->depth);
+    result->depth = left->depth;
+    normalize(result);
     return result;
 }
 
@@ -1111,11 +1114,42 @@ void treetobits(unsigned char *buf, halfnode_t *node, int depth) {
 
 NODETYPE _binop(BZET_PTR result, BZET_PTR left, BZET_PTR right, OP op, 
                 int lev, size_t left_loc, size_t right_loc) {
+
+    printf("binop, lev=%d\n", lev);
+    // Handle level 0 bit operations
+    if (lev == 0) {
+        halfnode_t node_data = 0;
+        halfnode_t left_data = left->bzet[left_loc];
+        halfnode_t right_data = right->bzet[right_loc];
+        for (int i = NODE_ELS - 1; i >= 0; i++) {
+            int left_data_bit = (left_data >> i) & 0x1;
+            int right_data_bit = (right_data >> i) & 0x1;
+            node_data = (node_data << 1) | do_data_op(op, left_data_bit, right_data_bit);
+        }
+
+        // Empty node
+        if (node_data == 0) {
+            return EMPTY;
+        }
+        // Saturated node
+        else if (node_data == (halfnode_t) -1) {
+            return SATURATED;
+        }
+        // Normal node, commit
+        else {
+            size_t loc = result->nhalfnodes;
+            resize(result, loc + 1);
+            result->bzet[loc] = node_data;
+            result->step[loc] = 0x1;
+            return NORMAL;
+        }
+    }
+
     // Get corresponding nodes of the left and right tree
     halfnode_t c_left_data = left->bzet[left_loc];
     halfnode_t c_left_tree = left->bzet[left_loc + 1];
     halfnode_t c_right_data = right->bzet[right_loc];
-    halfnode_t c_right_tree = right->bzet[right_loc];
+    halfnode_t c_right_tree = right->bzet[right_loc + 1];
 
     // Create new node to hold data
     halfnode_t node_data = 0;
@@ -1128,10 +1162,10 @@ NODETYPE _binop(BZET_PTR result, BZET_PTR left, BZET_PTR right, OP op,
     // For each element in the node
     for (int i = NODE_ELS - 1; i >= 0; --i) {
         int cur_left_tree_bit = (c_left_tree >> i) & 0x1;
-        int cur_left_data_bit = (c_left_data >> (i + NODE_ELS)) & 0x1;
+        int cur_left_data_bit = (c_left_data >> i) & 0x1;
         int cur_right_tree_bit = (c_right_tree >> i) & 0x1;
-        int cur_right_data_bit = (c_right_data >> (i + NODE_ELS)) & 0x1;
- 
+        int cur_right_data_bit = (c_right_data >> i) & 0x1;
+
         // TT: If both tree bits are on
         if (cur_left_tree_bit && cur_right_tree_bit) {
             // TODO: Handling for data literal operations
@@ -1265,11 +1299,11 @@ NODETYPE _binop(BZET_PTR result, BZET_PTR left, BZET_PTR right, OP op,
 
                 // Copy right subtree into result
                 case CB:
-                    // Append left subtree
-                    append_subtree(result, left, left_loc + 2);
+                    // Append right subtree
+                    append_subtree(result, right, right_loc + 2);
 
-                    // Move through left subtree
-                    left_loc = step_through(left, left_loc + 2) - 2;
+                    // Move through right subtree
+                    right_loc = step_through(right, right_loc + 2) - 2;
 
                     // Turn on tree bit
                     node_data <<= 1;
@@ -1385,7 +1419,7 @@ void _printBzet(BZET_PTR b, int stdOffset, FILE* target, int depth, size_t loc, 
         // (sizeof(halfnode_t) + 3)*offset for spaces an internal node takes up
         //     sizeof(halfnode_t) - number of bytes printed out
         //     3 - "pretty" part: [?-?]
-        int blanks = 3 + (sizeof(halfnode_t) * 2 + 3) * offset + stdOffset;
+        int blanks = 3 + (sizeof(halfnode_t) * 4 + 3) * offset + stdOffset;
         for (int j = 0; j < blanks; j++)
             fprintf(target, " ");
     }
