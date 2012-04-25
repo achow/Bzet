@@ -853,10 +853,100 @@ void BZET_FUNC(UNSET)(BZET_PTR b, int64_t bit) {
 }
 
 // Bzet_FIRST(b)
-int64_t BZET_FUNC(FIRST)(BZET_PTR b);
+// TODO: Add support for bit literal subtrees
+int64_t BZET_FUNC(FIRST)(BZET_PTR b) {
+    if (!b || BZET_FUNC(EMPTY)(b))
+        return -1;
+
+    int64_t bit = 0;
+    int depth = b->depth;
+    size_t loc = 0;
+    // Move through the tree to find the first bit
+    while (true) {
+        halfnode_t node_data = b->bzet[loc];
+        // At level 0 nodes, first bit will be here somewhere
+        if (depth == 0) {
+            for (int i = NODE_ELS - 1; i >= 0; i--)
+                if ((node_data >> i) & 1)
+                    return bit + ((NODE_ELS - 1) - i);
+        }
+
+        // For all other nodes, look for first data bit
+        halfnode_t node_tree = b->bzet[loc + 1];
+        for (int i = NODE_ELS - 1; i >= 0; i--) {
+            int data_bit = (node_data >> i) & 1;
+            int tree_bit = (node_tree >> i) & 1;
+
+            // If data bit set, first bit found
+            if (data_bit) {
+                return bit + ((NODE_ELS - 1) - i) * PASTE(pow, NODE_ELS)(depth);
+            }
+            // If tree bit is on, break out and examine subtree for first bit
+            else if (tree_bit) {
+                // Add weight of empty subtrees before this element as bit offset
+                bit += ((NODE_ELS - 1) - i) * PASTE(pow, NODE_ELS)(depth);
+                break;
+            }
+        }
+
+        // Move on to subtree
+        depth--;
+        loc += 2;
+    }
+}
 
 // Bzet_LAST(b)
-int64_t BZET_FUNC(LAST)(BZET_PTR b);
+// TODO: Add support for bit literal subtrees
+int64_t BZET_FUNC(LAST)(BZET_PTR b) {
+    if (!b || BZET_FUNC(EMPTY)(b))
+        return -1;
+
+    int64_t bit = 0;
+    int depth = b->depth;
+    size_t loc = 0;
+    // Move through the tree to find the first bit
+    while (true) {
+        halfnode_t node_data = b->bzet[loc];
+        // At level 0 nodes, last bit will be here somewhere
+        if (depth == 0) {
+            for (int i = 0; i < NODE_ELS; i++)
+                if ((node_data >> i) & 1)
+                    return bit + ((NODE_ELS - 1) - i);
+        }
+
+        // For all other nodes, look for first data bit
+        halfnode_t node_tree = b->bzet[loc + 1];
+
+        // Get position of last tree and data bits
+        int last_tree_bit = 0;
+        int last_data_bit = 0;
+        int skipped_subtrees = -1;
+        for (int i = NODE_ELS - 1; i >= 0; i--) {
+            if ((node_data >> i) & 1)
+                last_data_bit = (NODE_ELS - 1) - i;
+            if ((node_tree >> i) & 1) {
+                last_tree_bit = (NODE_ELS - 1) - i;
+                skipped_subtrees++;
+            }
+        }
+
+        // If last data bit occurs after last tree bit, last bit found
+        if (last_data_bit > last_tree_bit)
+            return bit + (last_data_bit + 1) * PASTE(pow, NODE_ELS)(depth) - 1;
+
+        // Otherwise last data bit is in the final subtree
+        // Skip subtrees to get to last subtree
+        for (int i = 0; i < skipped_subtrees; i++)
+            loc = step_through(b, loc + 2) - 2;
+        
+        // Add bits skipped to bit offset
+        bit += (last_tree_bit) * PASTE(pow, NODE_ELS)(depth);
+
+        // Move on to last subtree
+        depth--;
+        loc += 2;
+    }
+}
 
 // Bzet_COUNT(b)
 int64_t BZET_FUNC(COUNT)(BZET_PTR b) {
@@ -1510,7 +1600,7 @@ void normalize(BZET_PTR b) {
     // Count leading nodes that can be stripped.
     // This occurs when the data node is all zero and the leftmost tree bit is set
     while (depth > 0 && b->bzet[loc] == 0 && 
-        b->bzet[loc + 1] == (halfnode_t) (0x1 << (NODE_ELS - 1))) {
+           b->bzet[loc + 1] == (halfnode_t) (0x1 << (NODE_ELS - 1))) {
         leading++;
         loc += 2;
     }
@@ -1519,9 +1609,8 @@ void normalize(BZET_PTR b) {
     if (leading) {
         // Modify depth
         b->depth -= leading;
-        // Move bzet
+        // Move bzet and step
         memmove(b->bzet, b->bzet + loc, loc * sizeof(b->bzet[0]));
-        // Move step
         memmove(b->step, b->step + loc, loc * sizeof(b->step[0]));
         // Resize
         resize(b, b->nhalfnodes - loc);
@@ -1605,7 +1694,7 @@ void subtree_not(BZET_PTR b, size_t loc, int depth) {
     }
 }
 
-// TODO: use popcount
+// TODO: use popcount, add support for bit literal subtree
 int64_t _count(BZET_PTR b, size_t loc, int depth) {
     // Just return bit count with weight 1
     if (depth == 0) {
