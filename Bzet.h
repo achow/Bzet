@@ -990,7 +990,28 @@ bool BZET_FUNC(EMPTY)(BZET_PTR b) {
 }
 
 // Bzet_getBits(b, bits, limit, start)
-int64_t BZET_FUNC(getBits)(BZET_PTR b, int64_t* bits, int64_t limit, int64_t start);
+int64_t BZET_FUNC(getBits)(BZET_PTR b, int64_t* bits, int64_t limit, int64_t start) {
+    int64_t bit;
+    size_t loc = 0;
+
+    // Set number of bits to get, which is the smaller of the
+    // number of bits set in b and limit (if set)
+    int64_t bitcount = BZET_FUNC(COUNT)(b);
+    limit = limit ? ((limit > bitcount) ? bitcount : limit) : bitcount;
+
+    // Clone b to use to get bits
+    BZET_PTR b_copy = BZET_FUNC(clone)(b);
+    for (int64_t i = 0; i < limit; i++) {
+        // Get the first bit set and commit to bits
+        bit = BZET_FUNC(FIRST)(b);
+        bits[loc] = bit;
+        // Unset first bit
+        BZET_FUNC(UNSET)(b_copy, bit);
+        loc++;
+    }
+    // Destroy copy
+    BZET_FUNC(destroy(b_copy));
+}
 
 
 // Auxiliary functions
