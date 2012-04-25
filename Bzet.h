@@ -235,6 +235,7 @@ EXPORT_TAGS int64_t BZET_FUNC(getBits)(BZET_PTR b, int64_t* bits, int64_t limit 
 BZET_PTR bitstobzet(void *data, size_t len);
 void treetobits(unsigned char *buf, halfnode_t *node, int depth);
 
+// Implementation for binary operations
 NODETYPE _binop(BZET_PTR result, BZET_PTR left, BZET_PTR right, OP op, int lev, size_t left_loc = 0, size_t right_loc = 0);
 
 // Recursively print the bzet in "pretty print"
@@ -252,6 +253,8 @@ size_t step_through(BZET_PTR b, size_t loc);
 // In-place bitwise NOT of the subtree whose root is at loc
 void subtree_not(BZET_PTR b, size_t loc, int depth);
 
+// Implementation for bit count
+int64_t _count(BZET_PTR b, size_t loc, int depth);
 
 // Inline auxiliary functions
 
@@ -362,6 +365,8 @@ void append_subtree(BZET_PTR dst, BZET_PTR src, size_t loc) {
     size_t copy_size = step_through(src, loc) - loc;
     size_t dst_loc = dst->nhalfnodes;
 
+    printf("copy size %d\n", copy_size);
+
     // Resize dst to accomodate copy_size new elements
     resize(dst, dst->nhalfnodes + copy_size);
 
@@ -380,9 +385,6 @@ void append_subtree(BZET_PTR dst, BZET_PTR src, size_t loc) {
         static int buildDepth(int64_t size);
         static unsigned char dust(unsigned char x);
         int depthAt(size_t loc) const;
-
-        void append_subtree(const Bzet4& src, size_t loc);
-        void dropNodes(size_t loc, int n);
 */
 
 #if 0
@@ -786,12 +788,14 @@ void BZET_FUNC(SET)(BZET_PTR b, int64_t bit) {
     BZET_PTR temp_bzet = BZET_FUNC(new)(bit);
     if (!temp_bzet) {
         // TODO: Some error message
+        printf("temp fail\n");
         return;
     }
 
     BZET_PTR result_bzet = BZET_FUNC(OR)(b, temp_bzet);
     if (!result_bzet) {
         // TODO: Some error message
+        printf("result fail\n");
         BZET_FUNC(destroy)(temp_bzet);
         return;
     }
@@ -800,7 +804,7 @@ void BZET_FUNC(SET)(BZET_PTR b, int64_t bit) {
     free(b->bzet);
     free(b->step);
 
-    memcpy(result_bzet, b, sizeof(*result_bzet));
+    memcpy(b, result_bzet, sizeof(*result_bzet));
 
     free(result_bzet);
 
@@ -855,7 +859,9 @@ int64_t BZET_FUNC(FIRST)(BZET_PTR b);
 int64_t BZET_FUNC(LAST)(BZET_PTR b);
 
 // Bzet_COUNT(b)
-int64_t BZET_FUNC(COUNT)(BZET_PTR b);
+int64_t BZET_FUNC(COUNT)(BZET_PTR b) {
+    return _count(b, 0, b->depth);
+}
 
 
 // Other exported functions
@@ -1090,13 +1096,12 @@ void treetobits(unsigned char *buf, halfnode_t *node, int depth) {
 NODETYPE _binop(BZET_PTR result, BZET_PTR left, BZET_PTR right, OP op, 
                 int lev, size_t left_loc, size_t right_loc) {
 
-    printf("binop, lev=%d\n", lev);
     // Handle level 0 bit operations
     if (lev == 0) {
         halfnode_t node_data = 0;
         halfnode_t left_data = left->bzet[left_loc];
         halfnode_t right_data = right->bzet[right_loc];
-        for (int i = NODE_ELS - 1; i >= 0; i++) {
+        for (int i = NODE_ELS - 1; i >= 0; i--) {
             int left_data_bit = (left_data >> i) & 0x1;
             int right_data_bit = (right_data >> i) & 0x1;
             node_data = (node_data << 1) | do_data_op(op, left_data_bit, right_data_bit);
@@ -1140,7 +1145,7 @@ NODETYPE _binop(BZET_PTR result, BZET_PTR left, BZET_PTR right, OP op,
         int cur_left_data_bit = (c_left_data >> i) & 0x1;
         int cur_right_tree_bit = (c_right_tree >> i) & 0x1;
         int cur_right_data_bit = (c_right_data >> i) & 0x1;
-
+        
         // TT: If both tree bits are on
         if (cur_left_tree_bit && cur_right_tree_bit) {
             // TODO: Handling for data literal operations
@@ -1423,7 +1428,7 @@ void _printBzet(BZET_PTR b, int stdOffset, FILE* target, int depth, size_t loc, 
                 } 
                 else {
                     _printBzet(b, stdOffset, target, depth, step_through(b, loc + 2), offset + 1, true);
-                    loc = step_through(b, loc + 2) - 1;
+                    loc = step_through(b, loc + 2) - 2;
                 }
             }
         }
@@ -1598,6 +1603,39 @@ void subtree_not(BZET_PTR b, size_t loc, int depth) {
             }
         }
     }
+}
+
+// TODO: use popcount
+int64_t _count(BZET_PTR b, size_t loc, int depth) {
+    // Just return bit count with weight 1
+    if (depth == 0) {
+        halfnode_t data = b->bzet[loc];
+        int64_t count = 0;
+        for (int i = 0; i < NODE_ELS; i++)
+            count += ((data >> i) & 1);
+        return count;
+    }
+
+    // Handle all other levels
+    halfnode_t data_node = b->bzet[loc];
+    halfnode_t tree_node = b->bzet[loc + 1];
+    int64_t count = 0;
+    for (int i = NODE_ELS - 1; i >= 0; i--) {
+        // TODO: Add handling for variable data literal
+        int data_bit = (data_node >> i) & 1;
+        int tree_bit = (tree_node >> i) & 1;
+
+        // If data bit set, add its weighted count to running count
+        if (data_bit) 
+            count += PASTE(pow, NODE_ELS)(depth + 1);
+        // If tree bit set, recurse
+        else if (tree_bit) {
+            count += _count(b, loc + 2, depth - 1);
+            loc = step_through(b, loc + 2) - 2;
+        }
+    }
+
+    return count;
 }
 
 #endif
