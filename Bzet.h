@@ -515,11 +515,11 @@ BZET_PTR BZET_FUNC(new)(int64_t bit) {
     }
 
     // Set b->step
-    // It is only necessary to set steps corresponding to data halfnodes, since steps
-    // corresponding to tree halfnodes are only there to simplify things and are 
-    // never used
-    // No need to check b->size <= 255 to make sure b->step values doesn't overflow
-    // since it would never happen (4^255 ~ 10^153)
+    // It is only necessary to set steps corresponding to data halfnodes, since
+    // steps corresponding to tree halfnodes are only there to simplify things
+    // and are never used.
+    // No need to check b->size <= 255 to make sure b->step values doesn't
+    // overflow since it would never happen (4^255 ~ 10^153)
     for (int i = 0; i < b->nhalfnodes; i += 2)
         b->step[i] = (unsigned char) b->nhalfnodes - i;
 
@@ -537,36 +537,11 @@ BZET_PTR BZET_FUNC(new)(int64_t startbit, int64_t len) {
         return NULL;
 
     // Create Bzet with startbit set
-    BZET_PTR b = BZET_FUNC(new)(startbit);
+    BZET_PTR b = BZET_FUNC(new)();
     if (!b)
         return NULL;
 
-    // OR in the other bits
-    for (int64_t i = startbit + 1; i < startbit + len; i++) {
-        // Create new bzet with bit i set
-        BZET_PTR next = BZET_FUNC(new)(i);
-        if (!next) {
-            //TODO: some error message
-            BZET_FUNC(destroy)(b);
-            return NULL;
-        }
-
-        // Get a new bzet with the new bit ORed in
-        BZET_PTR temp = BZET_FUNC(OR)(b, next);
-        if (!next) {
-            //TODO: some error message
-            BZET_FUNC(destroy)(next);
-            BZET_FUNC(destroy)(b);
-            return NULL;
-        }
-
-        // Free unnecessary bzets
-        BZET_FUNC(destroy)(next);
-        BZET_FUNC(destroy)(b);
-
-        // Set b to the correct bzet
-        b = temp;
-    }
+    BZET_FUNC(RANGE)(b, startbit, len);
 
     return b;
 }
