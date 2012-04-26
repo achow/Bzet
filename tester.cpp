@@ -13,12 +13,12 @@
 
 using namespace std;
 
-#define SIZE 50000
-#define NBITS 5000
+#define SIZE 100000
+//#define NBITS 10000
 #define MAX_DENSITY 20
 #define COMPLETE
 
-int ntests = 5;
+int ntests = 50;
 int rawsize = (int) floor(SIZE / 8.0);
 
 clock_t gstart, gend;
@@ -83,11 +83,11 @@ int main() {
 
     return 1;*/
 
-    freopen ("correctnesstest.txt", "w", stdout);
+    //freopen ("correctnesstest.txt", "w", stdout);
     int density;
 
     for (int i = 0; i < ntests; i++) {
-        //srand((unsigned)time(0)); 
+        srand(time(NULL)); 
         density = (rands() % MAX_DENSITY) + 1;
 
         clock_t start = clock();
@@ -154,8 +154,6 @@ int main() {
 #endif
 
         cout << "First bzet is size " << BZET_FUNC(size)(bzet1) << ", ratio is " << (1.0 * BZET_FUNC(size)(bzet1) / rawsize * 100.0) << endl;
-
-        cout << "Building second bitset" << endl;
 
         bits1.clear();
         gen(bits1, nbits, SIZE);

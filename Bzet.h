@@ -968,7 +968,7 @@ int BZET_FUNC(LEV)(BZET_PTR b) {
 
 // Bzet_size(b)
 size_t BZET_FUNC(size)(BZET_PTR b) {
-    return (b->nhalfnodes * sizeof(b->nhalfnodes) + 1);
+    return (b->nhalfnodes * sizeof(halfnode_t) + 1);
 }
 
 // Bzet_HEX(b)
@@ -1444,7 +1444,7 @@ NODETYPE _binop(BZET_PTR result, BZET_PTR left, BZET_PTR right, OP op,
                     subtree_not(result, end, lev - 1);
 
                     // Move through left subtree
-                    left_loc = step_through(right, right_loc + 2) - 2;
+                    right_loc = step_through(right, right_loc + 2) - 2;
 
                     // Turn on tree bit
                     node_data <<= 1;
@@ -1753,9 +1753,7 @@ int64_t _count(BZET_PTR b, size_t loc, int depth) {
 
         // If data bit set, add its weighted count to running count
         if (data_bit) {
-            if (depth != 0)
-                printf("depth != 0!\n");
-            count += PASTE(pow, NODE_ELS)(depth + 1);
+            count += PASTE(pow, NODE_ELS)(depth);
         }
         // If tree bit set, recurse
         else if (tree_bit) {
