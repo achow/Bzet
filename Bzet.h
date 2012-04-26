@@ -275,12 +275,15 @@ inline
 BZET_PTR init(size_t initial_alloc = INITIAL_ALLOC) {
     // Allocate bzet struct
     BZET_PTR b = (BZET_PTR) malloc(sizeof(BZET));
-    if (!b)
+    if (!b) {
+        display_error("init malloc failed\n", true);
         return NULL;
+    }
 
     // Allocate bzet node array
     b->bzet = (halfnode_t*) malloc(initial_alloc * sizeof(halfnode_t));
     if (!b->bzet) {
+        display_error("init malloc failed\n", true);
         free(b);
         return NULL;
     }
@@ -288,6 +291,7 @@ BZET_PTR init(size_t initial_alloc = INITIAL_ALLOC) {
     // Allocate step array
     b->step = (unsigned char*) malloc(initial_alloc * sizeof(unsigned char));
     if (!b->step) {
+        display_error("init malloc failed\n", true);
         free(b);
         free(b->bzet);
         return NULL;
@@ -303,6 +307,7 @@ BZET_PTR init(size_t initial_alloc = INITIAL_ALLOC) {
 // Resizes the buffers in the Bzet if necessary
 inline
 void resize(BZET_PTR b, size_t nhalfnodes) {
+    printf("resize from %d to %d\n", b->nhalfnodes, nhalfnodes);
     // If reallocation is required
     if (nhalfnodes > b->nbufhalfnodes) {
         // Get new size required by growing it by RESIZE_SCALE repeatedly
@@ -365,7 +370,7 @@ void append_subtree(BZET_PTR dst, BZET_PTR src, size_t loc) {
     size_t copy_size = step_through(src, loc) - loc;
     size_t dst_loc = dst->nhalfnodes;
 
-    printf("copy size %d\n", copy_size);
+    printf("append %d at %d from %d\n", copy_size, dst_loc, loc);
 
     // Resize dst to accomodate copy_size new elements
     resize(dst, dst->nhalfnodes + copy_size);
@@ -563,25 +568,36 @@ BZET_PTR BZET_FUNC(clone)(BZET_PTR b) {
     if (!b)
         return NULL;
 
+    printf("ORIG\n");
+    BZET_FUNC(HEX)(b);
+    printf("ORIG\n");
+
     // Allocate Bzet
     BZET_PTR copy = (BZET_PTR) malloc(sizeof(BZET));
-    if (!copy)
+    if (!copy) {
+        display_error("copy malloc failed\n", true);
         return NULL;
+    }
 
     // Copy contents over
     copy->depth = b->depth;
     copy->nbufhalfnodes = b->nbufhalfnodes;
     copy->nhalfnodes = b->nhalfnodes;
 
+    printf("b nbuf=%d, depth=%d, nhalf=%d\n", b->nbufhalfnodes, b->depth, b->nhalfnodes);
+    printf("copy nbuf=%d, depth=%d, nhalf=%d\n", copy->nbufhalfnodes, copy->depth, copy->nhalfnodes);
+
     // Deep copy of bzet and step
     copy->bzet = (halfnode_t *) malloc(copy->nbufhalfnodes * sizeof(halfnode_t));
     if (!copy->bzet) {
+        display_error("copy malloc failed\n", true);
         free(copy);
         return NULL;
     }
 
     copy->step = (unsigned char *) malloc(copy->nbufhalfnodes * sizeof(unsigned char));
     if (!copy->step) {
+        display_error("copy malloc failed\n", true);
         free(copy->bzet);
         free(copy);
         return NULL;
@@ -589,6 +605,10 @@ BZET_PTR BZET_FUNC(clone)(BZET_PTR b) {
 
     memcpy(copy->bzet, b->bzet, copy->nhalfnodes * sizeof(halfnode_t));
     memcpy(copy->step, b->step, copy->nhalfnodes * sizeof(unsigned char));
+
+    printf("COPY\n");
+    BZET_FUNC(HEX)(copy);
+    printf("COPY\n");
 
     return copy;
 }
@@ -738,7 +758,7 @@ bool BZET_FUNC(TEST)(BZET_PTR b, int64_t bit) {
     }
     
     // Cache result
-    bool ret = BZET_FUNC(EMPTY)(result_bzet);
+    bool ret = !BZET_FUNC(EMPTY)(result_bzet);
 
     // Free temporary bzets
     BZET_FUNC(destroy)(test_bzet);
@@ -786,6 +806,7 @@ void BZET_FUNC(SET)(BZET_PTR b, int64_t bit) {
 
     // Create temporary bzets
     BZET_PTR temp_bzet = BZET_FUNC(new)(bit);
+    BZET_FUNC(HEX)(temp_bzet);
     if (!temp_bzet) {
         // TODO: Some error message
         printf("temp fail\n");
@@ -1011,6 +1032,8 @@ int64_t BZET_FUNC(getBits)(BZET_PTR b, int64_t* bits, int64_t limit, int64_t sta
     }
     // Destroy copy
     BZET_FUNC(destroy(b_copy));
+
+    return limit;
 }
 
 
@@ -1212,6 +1235,7 @@ NODETYPE _binop(BZET_PTR result, BZET_PTR left, BZET_PTR right, OP op,
         halfnode_t node_data = 0;
         halfnode_t left_data = left->bzet[left_loc];
         halfnode_t right_data = right->bzet[right_loc];
+        // Copute data node
         for (int i = NODE_ELS - 1; i >= 0; i--) {
             int left_data_bit = (left_data >> i) & 0x1;
             int right_data_bit = (right_data >> i) & 0x1;
@@ -1468,6 +1492,12 @@ NODETYPE _binop(BZET_PTR result, BZET_PTR left, BZET_PTR right, OP op,
         // Drop newly committed node if not root node
         if (result->nhalfnodes > 2)
             resize(result, result->nhalfnodes - 2);
+        // If root node, the bzet is empty
+        else {
+            BZET_FUNC(CLEAN)(result);
+            return NORMAL;
+        }
+
         return EMPTY;
     }
     // If resulting node is saturated
@@ -1640,8 +1670,10 @@ void normalize(BZET_PTR b) {
 
 size_t step_through(BZET_PTR b, size_t loc) {
     // Make sure loc is in range
-    if (loc >= b->nhalfnodes)
+    if (loc >= b->nhalfnodes) {
+        display_error("stepthrough fail\n", true);
         return -1;
+    }
 
     // Get step offset
     unsigned char step_offset = b->step[loc];
@@ -1649,6 +1681,7 @@ size_t step_through(BZET_PTR b, size_t loc) {
     // If the step offset is 0, the offset is too large to be actually stored
     // Compute it by examining the step of subtrees stemming from this node
     if (step_offset == 0) {
+        printf("STEPPING 0 at %d, nhalf=%d\n", loc, b->nhalfnodes);
         // Get node tree bits
         unsigned char tree_bits = b->bzet[loc + 1];
 
@@ -1661,7 +1694,7 @@ size_t step_through(BZET_PTR b, size_t loc) {
             if ((tree_bits >> i) & 1)
                 loc = step_through(b, loc);
         }
-
+        printf("step to %d\n", loc);
         return loc;
     }
 
