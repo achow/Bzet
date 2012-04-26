@@ -49,7 +49,7 @@ typedef uint32_t halfnode_t;
 static const unsigned int PASTE(powersof, NODE_ELS)[NPOWERS] = 
     { 1, 32, 1024, 32768, 1048576, 33554432, 1073741824 };
 #elif NODE_ELS == 16
-typedef uint16_t halfnode_t
+typedef uint16_t halfnode_t;
 #define NPOWERS 9
 static const unsigned int PASTE(powersof, NODE_ELS)[NPOWERS] = 
     { 1, 16, 256, 4096, 65536, 1048576, 16777216, 268435456, 4294967296 };
@@ -374,93 +374,6 @@ void append_subtree(BZET_PTR dst, BZET_PTR src, size_t loc) {
     memcpy(dst->step + dst_loc, src->step + loc, copy_size * sizeof(unsigned char));
 }
 
-/*
-#if (defined _DEBUG || defined DEBUG)
-        void printBytes(FILE* target = stdout) const;
-        void validateBzet(size_t loc = 1, int lev = 0);
-        void dump() const;
-#endif
-
-        static int buildDepth(int64_t size);
-        static unsigned char dust(unsigned char x);
-        int depthAt(size_t loc) const;
-*/
-
-#if 0
-#if (defined _DEBUG || defined DEBUG)
-inline
-void Bzet4::printBytes(FILE* target) const {
-    for (int i = 0; i < b->size; ++i) {
-        if (i % 10 == 0)
-            printf("\n");
-        fprintf(target, " 0x%.2X", b->bzet[i]); 
-    } 
-    fprintf(target, "\n");
-}
-#endif
-
-#if (defined _DEBUG || defined DEBUG)
-void Bzet4::validateBzet(size_t loc, int lev) {
-    if (!lev)
-        lev = b->bzet[0];
-
-    if (lev == 1)
-        return;
-
-    size_t nextLoc = loc;
-    for (int i = 3; i >= 0; --i) {
-        if ((b->bzet[loc] >> i) & 1) {
-            bool check = nextLoc + 1 >= 0 && nextLoc < b->size;
-            if (!check) {
-                printf("assert failed at nextLoc = %d, size = %d\n", (int) nextLoc, (int) b->size);
-                printf("bytes are: ");
-                printBytes();
-            }
-            assert(nextLoc + 1 >= 0 && nextLoc < b->size);
-            validateBzet(nextLoc + 1, lev - 1);
-            nextLoc = step_through(nextLoc + 1) - 1;
-        }
-    }
-
-    bool check = (dust(b->bzet[loc]) == b->bzet[loc]);
-    if (!check)
-        printf("assert failed at loc = %d, lev = %d\n", (int) loc, lev);
-    assert(check);
-    /*
-    for (int i = 1; i < b->size; ++i) {
-        bool test = (b->step[i] > 0 && b->step[i] <= b->size);
-        if (!test) {
-            printf("assertion failed, i = %d, b->step[i] = %d\n", i, b->step[i]);
-            dump();
-        }
-        assert(test);
-    }*/
-}
-
-void Bzet4::dump() const {
-    printf("DUMP\n");
-    printBzet();
-//#if (defined _DEBUG || defined DEBUG)
-    printf("BYTES: ");
-    printBytes();
-//#endif
-    printf("\nSize is %d\n", (int) b->size);
-    printf("STEP: ");
-    int x = 0;
-    for (int i = 1; i < b->size; ++i) {
-        if (x % 10 == 0)
-            printf("\n");
-        printf("%5d", (int) b->step[i]);
-        if (b->step[i] == 2 && b->step[i + 1] != 1) {
-            printf("\n | invalid step at %d | \n", i);
-        }
-        x++;
-    }
-    printf("\n");
-}
-#endif
-#endif 
-
 /*****************************************************************************
  * Function Implementations
  *****************************************************************************/
@@ -609,8 +522,9 @@ void BZET_FUNC(setequal)(BZET_PTR left, BZET_PTR right) {
 
     // Copy contents of bzet over
     left->depth = right->depth;
-    left->nbufhalfnodes = right->nbufhalfnodes;
-    left->nhalfnodes = right->nhalfnodes;
+    //left->nbufhalfnodes = right->nbufhalfnodes;
+    resize(left, right->nhalfnodes);
+
     memcpy(left->bzet, right->bzet, left->nhalfnodes * sizeof(halfnode_t));
     memcpy(left->step, right->step, left->nhalfnodes * sizeof(unsigned char));
 }
@@ -1478,8 +1392,9 @@ NODETYPE _binop(BZET_PTR result, BZET_PTR left, BZET_PTR right, OP op,
     // If resulting node is empty
     if (node_tree == 0 && node_data == 0) {
         // Drop newly committed node if not root node
-        if (result->nhalfnodes > 2)
+        if (result->nhalfnodes > 2) {
             resize(result, result->nhalfnodes - 2);
+        }
         // If root node, the bzet is empty
         else {
             BZET_FUNC(CLEAN)(result);
@@ -1491,8 +1406,10 @@ NODETYPE _binop(BZET_PTR result, BZET_PTR left, BZET_PTR right, OP op,
     // If resulting node is saturated
     else if (node_tree == 0 && node_data == (halfnode_t) -1) {
         // Drop newly committed node if not root node
-        if (result->nhalfnodes > 2)
+        if (result->nhalfnodes > 2) {
             resize(result, result->nhalfnodes - 2);
+        }
+
         return SATURATED;
     }
 
@@ -1532,12 +1449,16 @@ void _printBzet(BZET_PTR b, int stdOffset, FILE* target, int depth, size_t loc, 
     // If depth is 0 or no tree bits are set, this is a data node
     if (depth == 0 || !tree_bits) {
         fprintf(target, "D(%.*X)\n", sizeof(halfnode_t) * 2, data_bits);
+        if (b->step[loc] != 1) {
+            printf("data node with step != 1 at %d, nhalf=%d\n", loc, b->nhalfnodes);
+            exit(1);
+        }
     }
     // Otherwise this is a tree node
     else {     
         // Print the current node
         fprintf(target, "[%.*X-%.*X]", sizeof(halfnode_t) * 2, data_bits, 
-            sizeof(halfnode_t) * 2, tree_bits/*, b->step[loc]*/);
+            sizeof(halfnode_t) * 2, tree_bits);
 
         // Recursively print subtrees
         bool firstNode = true;
@@ -1549,10 +1470,11 @@ void _printBzet(BZET_PTR b, int stdOffset, FILE* target, int depth, size_t loc, 
                 // Print first node without offset
                 if (firstNode) {
                     _printBzet(b, stdOffset, target, depth, loc + 2, offset + 1);
+                    loc = step_through(b, loc + 2) - 2;
                     firstNode = false;
                 } 
                 else {
-                    _printBzet(b, stdOffset, target, depth, step_through(b, loc + 2), offset + 1, true);
+                    _printBzet(b, stdOffset, target, depth, loc + 2, offset + 1, true);
                     loc = step_through(b, loc + 2) - 2;
                 }
             }
