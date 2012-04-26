@@ -68,21 +68,6 @@ void dumpstep(BZET_PTR b) {
 }
 
 int main() {
-    /*Bzet8 *b1 = Bzet8_new();
-    Bzet8 *b2 = Bzet8_new();
-
-    Bzet8_SET(b1, 1);
-    Bzet8_SET(b1, 1000);
-    Bzet8_SET(b2, 1);
-    Bzet8_SET(b2, 1000);
-
-    cout << Bzet8_TEST(b1, 1000) << endl;
-
-    Bzet8 *result = Bzet8_AND(b1, b2);
-    Bzet8_HEX(result);
-
-    return 1;*/
-
     //freopen ("correctnesstest.txt", "w", stdout);
     int density;
 
@@ -338,6 +323,13 @@ int main() {
         clock_t end = clock();
 
         cout << "Time taken: " << (1.0 * (end - start) / CLOCKS_PER_SEC) << endl;
+
+        BZET_FUNC(destroy)(bzet1);
+        BZET_FUNC(destroy)(bzet2);
+        BZET_FUNC(destroy)(bzetAND);
+        BZET_FUNC(destroy)(bzetOR);
+        BZET_FUNC(destroy)(bzetXOR);
+
         cout << endl;
     }
 }
