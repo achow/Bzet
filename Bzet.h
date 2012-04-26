@@ -70,7 +70,7 @@ static const unsigned int PASTE(powersof, NODE_ELS)[NPOWERS] =
 enum OP { 
     OP_0000, OP_0001, OP_0010, OP_0011, OP_0100, OP_0101, OP_0110, OP_0111,
     OP_1000, OP_1001, OP_1010, OP_1011, OP_1100, OP_1101, OP_1110, OP_1111,
-    AND = 1, XOR = 6, OR = 7, NOR = 8, NOT = 10, NAND = 14 };
+    OP_AND = 1, OP_XOR = 6, OP_OR = 7, OP_NOR = 8, OP_NOT = 10, OP_NAND = 14 };
 enum ACTION { DA0, DA1, DB0, DB1, CA, CB, NA, NB };
 enum NODETYPE { SATURATED, EMPTY, NORMAL, LITERAL };
 
@@ -262,9 +262,6 @@ int64_t _count(BZET_PTR b, size_t loc, int depth);
 inline
 void display_error(char* message, bool fatal = false, FILE* output = stderr) {
     fprintf(output, "%s\n", message);
-#if (defined _DEBUG || defined DEBUG)
-    dump();
-#endif
     if (fatal)
         exit(1);
 }
@@ -307,7 +304,6 @@ BZET_PTR init(size_t initial_alloc = INITIAL_ALLOC) {
 // Resizes the buffers in the Bzet if necessary
 inline
 void resize(BZET_PTR b, size_t nhalfnodes) {
-    printf("resize from %d to %d\n", b->nhalfnodes, nhalfnodes);
     // If reallocation is required
     if (nhalfnodes > b->nbufhalfnodes) {
         // Get new size required by growing it by RESIZE_SCALE repeatedly
@@ -369,8 +365,6 @@ void append_subtree(BZET_PTR dst, BZET_PTR src, size_t loc) {
     // Calculate copy size and cache copy destination
     size_t copy_size = step_through(src, loc) - loc;
     size_t dst_loc = dst->nhalfnodes;
-
-    printf("append %d at %d from %d\n", copy_size, dst_loc, loc);
 
     // Resize dst to accomodate copy_size new elements
     resize(dst, dst->nhalfnodes + copy_size);
@@ -484,12 +478,16 @@ BZET_PTR BZET_FUNC(new)() {
 
 // Bzet_new(bit)
 BZET_PTR BZET_FUNC(new)(int64_t bit) {
-    if (bit < 0)
+    if (bit < 0) {
+        printf("bit < 0 in Bzet_new(bit)\n");
         return NULL;
+    }
 
     BZET_PTR b = init();
-    if (!b)
+    if (!b) {
+        printf("bzet init fail in Bzet_new(bit)\n");
         return NULL;
+    }
 
     // Build depth
     int depth = 0;
@@ -530,10 +528,6 @@ BZET_PTR BZET_FUNC(new)(int64_t bit) {
     for (int i = 0; i < b->nhalfnodes; i += 2)
         b->step[i] = (unsigned char) b->nhalfnodes - i;
 
-#if (defined _DEBUG || defined DEBUG)
-    validateBzet();
-#endif
-
     return b;
 }
 
@@ -568,10 +562,6 @@ BZET_PTR BZET_FUNC(clone)(BZET_PTR b) {
     if (!b)
         return NULL;
 
-    printf("ORIG\n");
-    BZET_FUNC(HEX)(b);
-    printf("ORIG\n");
-
     // Allocate Bzet
     BZET_PTR copy = (BZET_PTR) malloc(sizeof(BZET));
     if (!copy) {
@@ -583,9 +573,6 @@ BZET_PTR BZET_FUNC(clone)(BZET_PTR b) {
     copy->depth = b->depth;
     copy->nbufhalfnodes = b->nbufhalfnodes;
     copy->nhalfnodes = b->nhalfnodes;
-
-    printf("b nbuf=%d, depth=%d, nhalf=%d\n", b->nbufhalfnodes, b->depth, b->nhalfnodes);
-    printf("copy nbuf=%d, depth=%d, nhalf=%d\n", copy->nbufhalfnodes, copy->depth, copy->nhalfnodes);
 
     // Deep copy of bzet and step
     copy->bzet = (halfnode_t *) malloc(copy->nbufhalfnodes * sizeof(halfnode_t));
@@ -605,10 +592,6 @@ BZET_PTR BZET_FUNC(clone)(BZET_PTR b) {
 
     memcpy(copy->bzet, b->bzet, copy->nhalfnodes * sizeof(halfnode_t));
     memcpy(copy->step, b->step, copy->nhalfnodes * sizeof(unsigned char));
-
-    printf("COPY\n");
-    BZET_FUNC(HEX)(copy);
-    printf("COPY\n");
 
     return copy;
 }
@@ -670,7 +653,7 @@ BZET_PTR BZET_FUNC(OR)(BZET_PTR left, BZET_PTR right) {
     // Otherwise just operate on them
     else {
         align(left, right);
-        BZET_PTR result = BZET_FUNC(binop)(left, right, OR);
+        BZET_PTR result = BZET_FUNC(binop)(left, right, OP_OR);
         normalize(left);
         normalize(right);
         return result;
@@ -688,7 +671,7 @@ BZET_PTR BZET_FUNC(AND)(BZET_PTR left, BZET_PTR right) {
     // Otherwise just operate on them
     else {
         align(left, right);
-        BZET_PTR result = BZET_FUNC(binop)(left, right, AND);
+        BZET_PTR result = BZET_FUNC(binop)(left, right, OP_AND);
         normalize(left);
         normalize(right);
         return result;
@@ -709,7 +692,7 @@ BZET_PTR BZET_FUNC(XOR)(BZET_PTR left, BZET_PTR right) {
     // Otherwise just operate on them
     else {
         align(left, right);
-        BZET_PTR result = BZET_FUNC(binop)(left, right, XOR);
+        BZET_PTR result = BZET_FUNC(binop)(left, right, OP_XOR);
         normalize(left);
         normalize(right);
         return result;
@@ -806,7 +789,6 @@ void BZET_FUNC(SET)(BZET_PTR b, int64_t bit) {
 
     // Create temporary bzets
     BZET_PTR temp_bzet = BZET_FUNC(new)(bit);
-    BZET_FUNC(HEX)(temp_bzet);
     if (!temp_bzet) {
         // TODO: Some error message
         printf("temp fail\n");
@@ -838,25 +820,28 @@ void BZET_FUNC(UNSET)(BZET_PTR b, int64_t bit) {
     // Set a bit by ANDing b with the negation of a bzet with bit set
     // b & ~Bzet(bit)
 
+    if (!b) {
+        printf("b is null\n");
+        exit(1);
+    }
+
     // Create temporary bzets
     BZET_PTR temp_bzet = BZET_FUNC(new)(bit);
     if (!temp_bzet) {
         // TODO: Some error message
+        printf("temp bzet is null in unset\n");
+        exit(1);
         return;
     }
 
-    BZET_PTR notb = BZET_FUNC(NOT)(b);
-    if (!notb) {
-        // TODO: Some error message
-        BZET_FUNC(destroy)(temp_bzet);
-        return;
-    }
+    align(temp_bzet, b);
+    BZET_FUNC(INVERT)(temp_bzet);
 
-    BZET_PTR result_bzet = BZET_FUNC(AND)(temp_bzet, notb);
+    BZET_PTR result_bzet = BZET_FUNC(AND)(b, temp_bzet);
     if (!result_bzet) {
         // TODO: Some error message
+        printf("unset failed\n");
         BZET_FUNC(destroy)(temp_bzet);
-        BZET_FUNC(destroy)(notb);
         return;
     }
 
@@ -864,13 +849,12 @@ void BZET_FUNC(UNSET)(BZET_PTR b, int64_t bit) {
     free(b->bzet);
     free(b->step);
 
-    memcpy(result_bzet, b, sizeof(*result_bzet));
+    memcpy(b, result_bzet, sizeof(*result_bzet));
 
     free(result_bzet);
 
     // Free temporary bzets
     BZET_FUNC(destroy)(temp_bzet);
-    BZET_FUNC(destroy)(notb);
 }
 
 // Bzet_FIRST(b)
@@ -1022,16 +1006,20 @@ int64_t BZET_FUNC(getBits)(BZET_PTR b, int64_t* bits, int64_t limit, int64_t sta
 
     // Clone b to use to get bits
     BZET_PTR b_copy = BZET_FUNC(clone)(b);
+    if (!b_copy) {
+        printf("clone in getbits failed\n");
+        exit(1);
+    }
     for (int64_t i = 0; i < limit; i++) {
         // Get the first bit set and commit to bits
-        bit = BZET_FUNC(FIRST)(b);
+        bit = BZET_FUNC(FIRST)(b_copy);
         bits[loc] = bit;
         // Unset first bit
         BZET_FUNC(UNSET)(b_copy, bit);
         loc++;
     }
     // Destroy copy
-    BZET_FUNC(destroy(b_copy));
+    BZET_FUNC(destroy)(b_copy);
 
     return limit;
 }
@@ -1510,10 +1498,6 @@ NODETYPE _binop(BZET_PTR result, BZET_PTR left, BZET_PTR right, OP op,
 
     // TODO: See if collapsible to bit literal
 
-#if (defined _DEBUG || defined DEBUG)
-    assert(dust(m_bzet[loc]) == m_bzet[loc]);
-#endif
-
     return NORMAL;
 }
 
@@ -1553,7 +1537,7 @@ void _printBzet(BZET_PTR b, int stdOffset, FILE* target, int depth, size_t loc, 
     else {     
         // Print the current node
         fprintf(target, "[%.*X-%.*X]", sizeof(halfnode_t) * 2, data_bits, 
-            sizeof(halfnode_t) * 2, tree_bits);
+            sizeof(halfnode_t) * 2, tree_bits/*, b->step[loc]*/);
 
         // Recursively print subtrees
         bool firstNode = true;
@@ -1671,7 +1655,8 @@ void normalize(BZET_PTR b) {
 size_t step_through(BZET_PTR b, size_t loc) {
     // Make sure loc is in range
     if (loc >= b->nhalfnodes) {
-        display_error("stepthrough fail\n", true);
+        printf("stepthrough fail trying %d, nhalf=%d\n", loc, b->nhalfnodes);
+        display_error("", true);
         return -1;
     }
 
@@ -1681,12 +1666,11 @@ size_t step_through(BZET_PTR b, size_t loc) {
     // If the step offset is 0, the offset is too large to be actually stored
     // Compute it by examining the step of subtrees stemming from this node
     if (step_offset == 0) {
-        printf("STEPPING 0 at %d, nhalf=%d\n", loc, b->nhalfnodes);
         // Get node tree bits
         unsigned char tree_bits = b->bzet[loc + 1];
 
         // Advance to location of first subtree node
-        loc++;
+        loc += 2;
 
         // Step through each subtree
         // TODO: Performance gain by using popcount
@@ -1694,7 +1678,6 @@ size_t step_through(BZET_PTR b, size_t loc) {
             if ((tree_bits >> i) & 1)
                 loc = step_through(b, loc);
         }
-        printf("step to %d\n", loc);
         return loc;
     }
 
@@ -1720,7 +1703,7 @@ void subtree_not(BZET_PTR b, size_t loc, int depth) {
     halfnode_t tree_bits = b->bzet[loc + 1];
 
     // Make result data bits by bitwise NOT
-    b->bzet[loc] = (~data_bits & ~tree_bits) | data_bits & tree_bits;
+    b->bzet[loc] = (~data_bits & ~tree_bits) | (data_bits & tree_bits);
 
     // Repeat recursively for all subtrees
     loc += 2;
@@ -1769,8 +1752,11 @@ int64_t _count(BZET_PTR b, size_t loc, int depth) {
         int tree_bit = (tree_node >> i) & 1;
 
         // If data bit set, add its weighted count to running count
-        if (data_bit) 
+        if (data_bit) {
+            if (depth != 0)
+                printf("depth != 0!\n");
             count += PASTE(pow, NODE_ELS)(depth + 1);
+        }
         // If tree bit set, recurse
         else if (tree_bit) {
             count += _count(b, loc + 2, depth - 1);

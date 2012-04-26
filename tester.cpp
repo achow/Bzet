@@ -13,8 +13,8 @@
 
 using namespace std;
 
-#define SIZE 100000
-#define NBITS 10000
+#define SIZE 50000
+#define NBITS 5000
 #define MAX_DENSITY 20
 #define COMPLETE
 
@@ -34,7 +34,8 @@ inline void glob_end() {
 
 unsigned int rands() {
     unsigned int s;
-    rand_s(&s);
+    //rand_s(&s);
+    s = rand();
     return s;
 }
 
@@ -116,17 +117,17 @@ int main() {
         for (int j = 0; j < nbits; j++) {
             nset++;
 
-            cout << "bzet1 nbuf = " << bzet1->nbufhalfnodes << endl;
+            //cout << "bzet1 nbuf = " << bzet1->nbufhalfnodes << endl;
 
-            BZET_PTR old = BZET_FUNC(clone)(bzet1);
+            //BZET_PTR old = BZET_FUNC(clone)(bzet1);
 
             bitset1.set(bits1[j]);
             BZET_FUNC(SET)(bzet1, bits1[j]);
 
 #ifdef COMPLETE
-            cout << j << ": " << bits1[j] << endl;
+            //cout << j << ": " << bits1[j] << endl;
             assert(BZET_FUNC(TEST)(bzet1, bits1[j]) == 1);
-
+            //BZET_FUNC(HEX)(bzet1);
             bool test = (BZET_FUNC(COUNT)(bzet1) == nset);
             /*BZET_PTR x = BZET_FUNC(new)(bits1[j]);
             align(x, bzet1);
@@ -134,7 +135,7 @@ int main() {
             BZET_FUNC(destroy)(x);
             BZET_FUNC(HEX)(bzet1);*/
             if (!test) {
-                BZET_FUNC(HEX)(old);
+                //BZET_FUNC(HEX)(old);
                 dumpstep(bzet1);
                 BZET_FUNC(HEX)(bzet1);
                 //dumpstep(bzet1);
@@ -142,13 +143,11 @@ int main() {
                 cout << "expected: " << nset << endl;
                 exit(1);
             }
-            BZET_FUNC(destroy)(old);
+            //BZET_FUNC(destroy)(old);
 #endif
         }
 
         glob_end();
-
-        return 0;
 
 #ifdef COMPLETE
         cout << "Done building first bitset" << endl;
@@ -205,6 +204,8 @@ int main() {
             exit(1);
         }
 
+        cout << "AND counts match" << endl;
+        cout << "There are " << BZET_FUNC(COUNT)(bzetAND) << " bits in common" << endl;
 #ifdef COMPLETE
 
         int64_t* bits = new int64_t[BZET_FUNC(COUNT)(bzetAND)];
@@ -219,34 +220,32 @@ int main() {
         }
 
         delete bits;
+
+        cout << "Bits verified, AND succeeded" << endl;
 #endif
 
         glob_end();
 
-        cout << "There are " << BZET_FUNC(COUNT)(bzetAND) << " bits in common" << endl;
-
-       /* glob_start();
+        glob_start();
 
         //or
         cout << "Testing OR" << endl;
-        Bzet4 bzetOR = bzet1 | bzet2;
+        BZET_PTR bzetOR = BZET_FUNC(OR)(bzet1, bzet2);
         bitset<SIZE> bitsetOR = bitset1 | bitset2;
 
-        if (bzetOR.count() != bitsetOR.count()) {
-            cout << "OR count mismatch" << endl;
+        if (BZET_FUNC(COUNT)(bzetOR) != bitsetOR.count()) {
+            cout << "OR count mismatch bzet=" << BZET_FUNC(COUNT)(bzetOR) << "bitset=" << bitsetOR.count() << endl;
+            BZET_FUNC(HEX)(bzetOR);
             exit(1);
         }
 
+        cout << "OR counts match" << endl;
+
 #ifdef COMPLETE
-        cout << "Bitcount: ";
-        count_bits(bzetOR);
+        bits = new int64_t[BZET_FUNC(COUNT)(bzetOR)];
+        BZET_FUNC(getBits)(bzetOR, bits);
 
-        assert(bzetOR.count() == nbits * 2 - bzetAND.count());
-
-        bits = new long long[bzetOR.count()];
-        bzetOR.getBits(bits);
-
-        for (int i = 0; i < bzetOR.count(); i++) {
+        for (int i = 0; i < BZET_FUNC(COUNT)(bzetOR); i++) {
             int bit = bits[i];
             if (!bitsetOR.test(bit)) {
                 cout << "bit " << bit << " not set in bitset" << endl;
@@ -259,26 +258,25 @@ int main() {
         
         glob_end();
 
+        cout << "OR bits verified, OR succeeded" << endl;
+
         glob_start();
 
         //xor
         cout << "Testing XOR" << endl;
-        Bzet4 bzetXOR = bzet1 ^ bzet2;
+        BZET_PTR bzetXOR = BZET_FUNC(XOR)(bzet1, bzet2);
         bitset<SIZE> bitsetXOR = bitset1 ^ bitset2;
 
-        if (bzetOR.count() != bitsetOR.count()) {
+        if (BZET_FUNC(COUNT)(bzetXOR) != bitsetXOR.count()) {
             cout << "XOR count mismatch" << endl;
             exit(1);
         }
 
 #ifdef COMPLETE
-        cout << "Bitcount: ";
-        count_bits(bzetXOR);
+        bits = new int64_t[BZET_FUNC(COUNT)(bzetXOR)];
+        BZET_FUNC(getBits)(bzetXOR, bits);
 
-        bits = new long long[bzetXOR.count()];
-        bzetXOR.getBits(bits);
-
-        for (int i = 0; i < bzetXOR.count(); i++) {
+        for (int i = 0; i < BZET_FUNC(COUNT)(bzetXOR); i++) {
             int bit = bits[i];
             if (!bitsetXOR.test(bit)) {
                 cout << "bit " << bit << " not set in bitset" << endl;
@@ -294,27 +292,23 @@ int main() {
         glob_start();
 
         //not
-        cout << "Testing NOT" << endl;
-        Bzet4 bzetNOT1 = ~bzet1;
-        Bzet4 bzetNOT2 = ~bzet2;
+        /*cout << "Testing NOT" << endl;
+        BZET_PTR bzetNOT1 = BZET_FUNC(NOT)(bzet1);
+        BZET_PTR bzetNOT2 = BZET_FUNC(NOT)(bzet2);
         bitset<SIZE> bitsetNOT1 = ~bitset1;
         bitset<SIZE> bitsetNOT2 = ~bitset2;
 
 #ifdef COMPLETE
-        if (bzetNOT1.count() != bitsetNOT1.count()) {
+        if (BZET_FUNC(COUNT)(bzetNOT1) != bitsetNOT1.count()) {
             cout << "NOT count mismatch" << endl;
             exit(1);
         }
-        if (bzetNOT2.count() != bitsetNOT2.count()) {
+        if (BZET_FUNC(COUNT)(bzetNOT2) != bitsetNOT2.count()) {
             cout << "NOT count mismatch" << endl;
             exit(1);
-        }
-        //cout << "Bitcount: ";
-        //count_bits(bzetOR);
+        }*/
 
-        cout << "bzet1 NOT " << bzetNOT1.size() << ", ratio is " << (1.0 * bzetNOT1.size() / rawsize * 100) << endl;
-        cout << "bzet2 NOT " << bzetNOT2.size() << ", ratio is " << (1.0 * bzetNOT2.size() / rawsize * 100) << endl;
-
+        /*
         bits = new long long[bzetNOT1.count()];
         bzetNOT1.getBits(bits);
 
@@ -339,10 +333,10 @@ int main() {
             }
         }
 
-        delete bits;
-#endif
+        delete bits;*/
+
         glob_end();
-        */
+        
         clock_t end = clock();
 
         cout << "Time taken: " << (1.0 * (end - start) / CLOCKS_PER_SEC) << endl;
