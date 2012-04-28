@@ -447,7 +447,8 @@ bool BZET::at(int64_t bit) const {
     // and checking if the result is empty
     // *this & Bzet(bit)
 
-    return !(*((BZET*) this) & BZET(bit)).empty();
+    BZET temp(bit);
+    return !(*((BZET*) this) & temp).empty();
 }
 
 // Set a range of bits
@@ -465,8 +466,8 @@ void BZET::setRange(int64_t start, int64_t len) {
 void BZET::set(int64_t bit) {
     // Set a bit by ORing a bzet with bit set into b
     // b | Bzet(bit)
-
-    *this = *this | BZET(bit);
+    BZET temp(bit);
+    *this = *this | temp;
 }
 
 // Unset a bit
