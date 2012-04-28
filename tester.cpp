@@ -1,4 +1,3 @@
-#define NODE_ELS 8
 #include "Bzet.h"
 
 #include <math.h>
@@ -11,7 +10,6 @@
 
 using namespace std;
 
-//#define NBITS 10000
 #ifndef SIZE
 #define SIZE 10000
 #endif

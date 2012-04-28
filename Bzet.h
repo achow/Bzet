@@ -3,7 +3,6 @@
  *
  * Things to do:
  *  - Good error messages, better error handling in general (?)
- *  - Currently C-style C++, changes needed to be C compatible
  *  - Performance can be improved by using popcount compiler intrinsics
  *    instead of manually counting bits
  *
@@ -39,24 +38,23 @@
 #define BZET PASTE(Bzet, NODE_ELS)
 #endif
 
-#define BZET_FUNC(x) PASTE_UNDER(BZET, x)
 #define POW PASTE(pow, NODE_ELS)
 
 #if NODE_ELS == 32
 typedef uint32_t halfnode_t;
 #define NPOWERS 7
-unsigned int const PASTE(powersof, NODE_ELS)[NPOWERS] = 
+size_t const PASTE(powersof, NODE_ELS)[NPOWERS] = 
     { 1, 32, 1024, 32768, 1048576, 33554432, 1073741824 };
 #elif NODE_ELS == 16
 typedef uint16_t halfnode_t;
-#define NPOWERS 9
-unsigned int const PASTE(powersof, NODE_ELS)[NPOWERS] = 
-    { 1, 16, 256, 4096, 65536, 1048576, 16777216, 268435456, 4294967296 };
+#define NPOWERS 8
+size_t const PASTE(powersof, NODE_ELS)[NPOWERS] = 
+    { 1, 16, 256, 4096, 65536, 1048576, 16777216, 268435456 };
 #elif NODE_ELS == 8
 typedef uint8_t halfnode_t;
-#define NPOWERS 10
-unsigned int const PASTE(powersof, NODE_ELS)[NPOWERS] = 
-    { 1, 8, 64, 512, 4096, 32768, 262144, 2097152, 16777216, 134217728 };
+#define NPOWERS 11
+size_t const PASTE(powersof, NODE_ELS)[NPOWERS] = 
+    { 1, 8, 64, 512, 4096, 32768, 262144, 2097152, 16777216, 134217728, 1073741824 };
 #else
 #error "Invalid NODE_ELS provided"
 #endif
