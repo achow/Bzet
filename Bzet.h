@@ -306,7 +306,7 @@ BZET::BZET(int64_t bit) {
     // No need to check b->size <= 255 to make sure b->step values doesn't
     // overflow since it would never happen (4^255 ~ 10^153)
     for (int i = 0; i < m_nhalfnodes; i += 2)
-        m_step[i] = (unsigned char) m_nhalfnodes - i;
+        m_step[i] = (unsigned char) (m_nhalfnodes - i);
 }
 
 // Range constructor
@@ -594,9 +594,9 @@ size_t BZET::size() const {
     return (m_nhalfnodes * sizeof(halfnode_t) + 1);
 }
 
-// Bzet_HEX(b)
+// Prints out Bzet tree in human-readable form
 void BZET::printBzet(int stdOffset, FILE* target) const {
-    _printBzet(0, stdout, m_depth);
+    _printBzet(stdOffset, target, m_depth);
 }
 
 // Copy canonical form of bzet to supplied buffer
@@ -633,7 +633,6 @@ int64_t BZET::getBits(int64_t* bits, int64_t limit, int64_t start) {
     for (int64_t i = 0; i < limit; i++) {
         // Get the first bit set and commit to bits
         bit = b_copy.firstBit();
-        bits[loc] = bit;
 #ifdef DEBUG
         if (bit < 0) {
             printf("getbits: bit < 0 (%d of limit %d)", i, limit);
@@ -642,7 +641,11 @@ int64_t BZET::getBits(int64_t* bits, int64_t limit, int64_t start) {
 #endif
         // Unset first bit
         b_copy.unset(bit);
-        loc++;
+
+        if (bit >= start) {
+            bits[loc] = bit;
+            loc++;
+        }
     }
 
     return limit;
@@ -651,25 +654,8 @@ int64_t BZET::getBits(int64_t* bits, int64_t limit, int64_t start) {
 
 // Auxiliary functions
 
-/*BZET_PTR bitstobzet(void *data, size_t len) {
-    unsigned char *bytes = (unsigned char *) data;
-
-    // Find depth required to store len bytes
-    int depth = 0;
-    while (len * 8 < POW(depth + 1))
-        depth++;
-
-    // Create a bzet with initial alloc of maximum required buffers
-    // b->nhalfnodes at this point is 0
-    BZET_PTR b = init(depth / sizeof(halfnode_t) + 1);
-
-    // Set actual depth
-    b->depth = depth;
-
-
-}*/
 /*
-NODETYPE bitstotree(BZET_PTR b, int depth, unsigned char *data, size_t len) {
+NODETYPE bitstotree(BZET& b, int depth, unsigned char *data, size_t len) {
     if (len < POW(depth) / 8)
         return EMPTY;
 
@@ -785,7 +771,7 @@ NODETYPE bitstotree(BZET_PTR b, int depth, unsigned char *data, size_t len) {
     return NORMAL;
 }
 
-void treetobits(unsigned char *buf, halfnode_t *node, int depth) {
+void treetobits(halfnode_t *dst, halfnode_t *node, int depth) {
     // If depth is 0, we already have a data literal
     if (depth == 0) {
         // Work byte by byte to write to buffer in big endian
@@ -850,7 +836,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
         for (int i = NODE_ELS - 1; i >= 0; i--) {
             int left_data_bit = (left_data >> i) & 0x1;
             int right_data_bit = (right_data >> i) & 0x1;
-            node_data = (node_data << 1) | do_data_op(op, left_data_bit, right_data_bit);
+            node_data = (node_data << 1) | (halfnode_t) do_data_op(op, left_data_bit, right_data_bit);
         }
 
         // Empty node
@@ -1091,7 +1077,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
         // Only data bits
         else /*if (!cur_left_tree_bit && !cur_right_tree_bit)*/ {
             // Shift in data bit
-            node_data = (node_data << 1) | do_data_op(op, cur_left_data_bit, cur_right_data_bit);
+            node_data = (node_data << 1) | (halfnode_t) do_data_op(op, cur_left_data_bit, cur_right_data_bit);
             node_tree <<= 1;
         }
     }
@@ -1226,7 +1212,7 @@ void BZET::align(BZET& b1, BZET& b2) {
         size_t loc = 0;
         for (int i = 0; i < diffdepth; i++) {
             b2.m_bzet[loc] = 0;
-            b2.m_bzet[loc + 1] = (halfnode_t) (0x1 << (NODE_ELS - 1));
+            b2.m_bzet[loc + 1] = (halfnode_t) ((halfnode_t) 0x1 << (NODE_ELS - 1));
 
             if (b2.m_nhalfnodes - loc > 255)
                 b2.m_step[loc] = 0;
@@ -1252,7 +1238,7 @@ void BZET::align(BZET& b1, BZET& b2) {
         size_t loc = 0;
         for (int i = 0; i < diffdepth; i++) {
             b1.m_bzet[loc] = 0;
-            b1.m_bzet[loc + 1] = (halfnode_t) (0x1 << (NODE_ELS - 1));
+            b1.m_bzet[loc + 1] = (halfnode_t) ((halfnode_t) 0x1 << (NODE_ELS - 1));
 
             if (b1.m_nhalfnodes - loc > 255)
                 b1.m_step[loc] = 0;
@@ -1271,7 +1257,7 @@ void BZET::normalize() {
     // Count leading nodes that can be stripped.
     // This occurs when the data node is all zero and only the leftmost tree bit is set
     while (depth > 0 && m_bzet[loc] == 0 && 
-           m_bzet[loc + 1] == (halfnode_t) (0x1 << (NODE_ELS - 1))) {
+           m_bzet[loc + 1] == (halfnode_t) ((halfnode_t) 0x1 << (NODE_ELS - 1))) {
         leading++;
         loc += 2;
     }
@@ -1279,7 +1265,7 @@ void BZET::normalize() {
     // If there are leading nodes that can be stripped
     if (leading) {
         // Modify depth
-        m_depth -= leading;
+        m_depth -= (unsigned char) leading;
         // Move bzet and step
         memmove(m_bzet, m_bzet + loc, (m_nhalfnodes - loc) * sizeof(halfnode_t));
         memmove(m_step, m_step + loc, (m_nhalfnodes - loc) * sizeof(unsigned char));
@@ -1293,7 +1279,7 @@ size_t BZET::step_through(size_t loc) const {
     if (loc >= m_nhalfnodes) {
         printf("stepthrough fail trying %d, nhalf=%d\n", loc, m_nhalfnodes);
         display_error("", true);
-        return -1;
+        //return -1;
     }
 
     // Get step offset
