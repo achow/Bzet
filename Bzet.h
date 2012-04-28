@@ -23,7 +23,7 @@
 #define NODE_ELS 8
 #endif
 
-// TODO: bool typedef?
+//#define USE_LITERAL
 
 #define PASTE_(x,y) x ## y
 #define PASTE(x,y) PASTE_(x,y)
@@ -72,7 +72,12 @@ enum OP {
     OP_1000, OP_1001, OP_1010, OP_1011, OP_1100, OP_1101, OP_1110, OP_1111,
     OP_AND = 1, OP_XOR = 6, OP_OR = 7, OP_NOR = 8, OP_NOT = 10, OP_NAND = 14 };
 enum ACTION { DA0, DA1, DB0, DB1, CA, CB, NA, NB };
+
+#ifdef USE_LITERAL
 enum NODETYPE { SATURATED, EMPTY, NORMAL, LITERAL };
+#else
+enum NODETYPE { SATURATED, EMPTY, NORMAL };
+#endif
 
 static const ACTION optable[64] = {       
         DB0, DA0, DB0, DA0 , //00 0000 FALSE   Result
@@ -135,8 +140,10 @@ class BZET {
 		bool empty() const;
 
     private:
+#ifdef USE_LITERAL
         //BZET_PTR bitstobzet(void *data, size_t len);
         //void treetobits(unsigned char *buf, halfnode_t *node, int depth);
+#endif
 
         NODETYPE _binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc = 0, size_t right_loc = 0);
         void _printBzet(int stdOffset, FILE* target, int depth, size_t loc = 0, int offset = 0, bool pad = 0) const;
@@ -145,7 +152,7 @@ class BZET {
 
         size_t step_through(size_t loc) const;
 
-        // Inline auxiliary function declarations
+        // Inline auxiliary functions
         static void display_error(char* message, bool fatal = false, FILE* output = stderr);
         void init(size_t initial_alloc = INITIAL_ALLOC);
         void resize(size_t nhalfnodes);
@@ -255,6 +262,8 @@ void BZET::append_subtree(BZET& src, size_t loc) {
 }
 
 #ifdef BZET_IMPL_
+
+// -- CONSTRUCTORS / DESTRUCTORS --
 
 // Default constructor. Creates an empty bzet.
 BZET::BZET() { 
@@ -444,6 +453,8 @@ BZET BZET::binop(BZET& left, BZET& right, OP op) {
     return result;
 }
 
+// -- BIT OPERATIONS --
+
 // Test if a bit is set
 bool BZET::at(int64_t bit) const {
     // Test if a bit is set by ANDing the bzet with a bzet with only bit set
@@ -584,6 +595,8 @@ int64_t BZET::count() const {
     return _count(0, m_depth);
 }
 
+// -- OTHER BZET OPERATIONS --
+
 // Get depth of bzet
 int BZET::depth() const {
     return (int) m_depth;
@@ -654,6 +667,7 @@ int64_t BZET::getBits(int64_t* bits, int64_t limit, int64_t start) {
 
 // Auxiliary functions
 
+#ifdef USE_LITERAL
 /*
 NODETYPE bitstotree(BZET& b, int depth, unsigned char *data, size_t len) {
     if (len < POW(depth) / 8)
@@ -825,6 +839,7 @@ void treetobits(halfnode_t *dst, halfnode_t *node, int depth) {
     }
 }
 */
+#endif
 
 NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, size_t right_loc) {
     // Handle level 0 bit operations
@@ -888,6 +903,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
         
         // TT: If both tree bits are on
         if (cur_left_tree_bit && cur_right_tree_bit) {
+#ifdef USE_LITERAL
             // TODO: Handling for data literal operations
             // If both corresponding subtrees are data literals
             if (cur_left_data_bit && cur_left_tree_bit) {
@@ -900,6 +916,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
             }
             // Otherwise both subtrees are actual trees
             else {
+#endif
                 // Recurse
                 NODETYPE cn = _binop(left, right, op, lev - 1, left_loc, right_loc);
 
@@ -929,7 +946,9 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
                 // Advance location pointers
                 left_loc = left.step_through(left_loc);
                 right_loc = right.step_through(right_loc);
+#ifdef USE_LITERAL
             }
+#endif
         } 
         // ?T or T?: If only one of the tree bits are on
         else if (cur_left_tree_bit || cur_right_tree_bit) {
@@ -1070,16 +1089,25 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
 
                 default:
                     // Should be impossible to get here, but just in case?
-                    display_error("Bzet4::_binop: Something went terribly, terribly wrong", true);
+                    display_error("_binop: Something went terribly, terribly wrong", true);
                     break;
             }
         } 
         // Only data bits
-        else /*if (!cur_left_tree_bit && !cur_right_tree_bit)*/ {
+#ifdef USE_LITERAL
+        else {
+#else
+        else if (!cur_left_tree_bit && !cur_right_tree_bit) {
+#endif
             // Shift in data bit
             node_data = (node_data << 1) | (halfnode_t) do_data_op(op, cur_left_data_bit, cur_right_data_bit);
             node_tree <<= 1;
         }
+#ifndef USE_LITERAL
+        else {
+            display_error("_binop: Invalid bit state (data bit and tree bit set simultaneously)", true);
+        }
+#endif
     }
 
     // Write nodes
