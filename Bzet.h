@@ -1066,12 +1066,12 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
                     end = m_nhalfnodes;
 
                     // Append right subtree
-                    right.append_subtree(right, right_loc);
+                    append_subtree(right, right_loc);
 
                     // Negate
                     subtree_not(end, lev - 1);
 
-                    // Move through left subtree
+                    // Move through right subtree
                     right_loc = right.step_through(right_loc);
 
                     // Turn on tree bit
@@ -1320,8 +1320,11 @@ size_t BZET::step_through(size_t loc) const {
 
 void BZET::subtree_not(size_t loc, int depth) {
     // Check if loc is in range
-    if (loc >= m_nhalfnodes)
+    if (loc >= m_nhalfnodes) {
+        printf("subtree_not: loc >= m_halfnodes %d %d\n", loc, m_nhalfnodes);
+        exit(1);
         return;
+    }
 
     // For level 0 nodes, simply NOT it
     if (depth == 0) {

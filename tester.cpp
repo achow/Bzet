@@ -1,5 +1,3 @@
-#define _CRT_RAND_S
-
 #define NODE_ELS 8
 #include "Bzet.h"
 
@@ -13,12 +11,19 @@
 
 using namespace std;
 
-#define NBITS 10000
-#define SIZE 80000
-#define MAX_DENSITY 20
+//#define NBITS 10000
+#ifndef SIZE
+#define SIZE 10000
+#endif
+#define MAX_DENSITY 50
 #define COMPLETE
 
-int ntests = 5;
+#ifndef NTESTS
+#define NTESTS 50
+#endif
+
+int ntests = NTESTS;
+
 int rawsize = (int) floor(SIZE / 8.0);
 
 clock_t gstart, gend;
@@ -34,7 +39,6 @@ inline void glob_end() {
 
 unsigned int rands() {
     unsigned int s;
-    //rand_s(&s);
     s = rand();
     return s;
 }
@@ -62,7 +66,7 @@ int main() {
     int density;
 
     for (int i = 0; i < ntests; i++) {
-        srand((unsigned)time(0)); 
+        //srand((unsigned)time(0)); 
         density = (rands() % MAX_DENSITY) + 1;
 
         clock_t start = clock();
@@ -229,6 +233,9 @@ int main() {
         for (int i = 0; i < bzetXOR.count(); i++) {
             int bit = bits[i];
             if (!bitsetXOR.test(bit)) {
+                bzet1.printBzet();
+                bzet2.printBzet();
+                bzetXOR.printBzet();
                 cout << "bit " << bit << " not set in bitset" << endl;
                 exit(1);
             }
