@@ -40,7 +40,12 @@
 
 #define POW PASTE(pow, NODE_ELS)
 
-#if NODE_ELS == 32
+#if NODE_ELS == 64
+typedef uint64_t halfnode_t;
+#define NPOWERS 6
+size_t const PASTE(powersof, NODE_ELS)[NPOWERS] = 
+    { 1, 64, 4096, 262144, 16777216, 1073741824 };
+#elif NODE_ELS == 32
 typedef uint32_t halfnode_t;
 #define NPOWERS 7
 size_t const PASTE(powersof, NODE_ELS)[NPOWERS] = 
@@ -249,7 +254,7 @@ void BZET::append_subtree(BZET& src, size_t loc) {
     memcpy(m_step + dst_loc, src.m_step + loc, copy_size * sizeof(unsigned char));
 }
 
-// -- CONSTRUCTORS/DESTRUCTOR ---
+#ifdef BZET_IMPL_
 
 // Default constructor. Creates an empty bzet.
 BZET::BZET() { 
@@ -1399,4 +1404,6 @@ int64_t BZET::_count(size_t loc, int depth) const {
     return count;
 }
 
-#endif
+#endif // BZET_IMPL_
+
+#endif // BZET_H_
