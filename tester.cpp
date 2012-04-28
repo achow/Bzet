@@ -161,7 +161,7 @@ int main() {
 
         cout << "Bit counts match for AND: " << bzetAND.count() << endl;
 
-        long long* bits = new long long[bzetAND.count()];
+        int64_t* bits = new int64_t[bzetAND.count()];
         bzetAND.getBits(bits);
 
         for (int i = 0; i < bzetAND.count(); i++) {
@@ -193,7 +193,7 @@ int main() {
 #ifdef COMPLETE
         assert(bzetOR.count() == nbits * 2 - bzetAND.count());
 
-        bits = new long long[bzetOR.count()];
+        bits = new int64_t[bzetOR.count()];
         bzetOR.getBits(bits);
 
         for (int i = 0; i < bzetOR.count(); i++) {
@@ -223,7 +223,7 @@ int main() {
 
 #ifdef COMPLETE
 
-        bits = new long long[bzetXOR.count()];
+        bits = new int64_t[bzetXOR.count()];
         bzetXOR.getBits(bits);
 
         for (int i = 0; i < bzetXOR.count(); i++) {
@@ -263,7 +263,7 @@ int main() {
         cout << "bzet1 NOT " << bzetNOT1.size() << ", ratio is " << (1.0 * bzetNOT1.size() / rawsize * 100) << endl;
         cout << "bzet2 NOT " << bzetNOT2.size() << ", ratio is " << (1.0 * bzetNOT2.size() / rawsize * 100) << endl;
 
-        bits = new long long[bzetNOT1.count()];
+        bits = new int64_t[bzetNOT1.count()];
         bzetNOT1.getBits(bits);
 
         for (int i = 0; i < bzetNOT1.count(); i++) {
@@ -276,7 +276,7 @@ int main() {
 
         delete bits;
 
-        bits = new long long[bzetNOT2.count()];
+        bits = new int64_t[bzetNOT2.count()];
         bzetNOT2.getBits(bits);
 
         for (int i = 0; i < bzetNOT2.count(); i++) {
