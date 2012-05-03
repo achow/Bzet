@@ -480,8 +480,31 @@ void BZET::setRange(int64_t start, int64_t len) {
 void BZET::set(int64_t bit) {
     // Set a bit by ORing a bzet with bit set into b
     // b | Bzet(bit)
+    if (empty())
+        *this = BZET(bit);
+
     BZET temp(bit);
-    *this = *this | temp;
+    // Make result bzet
+    BZET result;
+
+    // Align both bzets
+    align(*this, temp);
+
+    // Operate
+    result._binop(*this, temp, OP_OR, m_depth);
+
+    // Normalize
+    result.normalize();
+
+    // Shallow copy result to *this
+    m_nhalfnodes = result.m_nhalfnodes;
+    m_nbufhalfnodes = result.m_nbufhalfnodes;
+    free(m_bzet);
+    free(m_step);
+    m_bzet = result.m_bzet;
+    m_step = result.m_step;
+    result.m_bzet = NULL;
+    result.m_step = NULL;
 }
 
 // Unset a bit
