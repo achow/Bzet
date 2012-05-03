@@ -153,7 +153,7 @@ class BZET {
         size_t step_through(size_t loc) const;
 
         // Inline auxiliary functions
-        static void display_error(char* message, bool fatal = false, FILE* output = stderr);
+        static void display_error(const char* message, bool fatal = false, FILE* output = stderr);
         void init(size_t initial_alloc = INITIAL_ALLOC);
         void resize(size_t nhalfnodes);
         static size_t POW(int n);
@@ -171,7 +171,7 @@ class BZET {
 
 // Error message printing and optional exiting
 inline
-void BZET::display_error(char* message, bool fatal, FILE* output) {
+void BZET::display_error(const char* message, bool fatal, FILE* output) {
     fprintf(output, "%s\n", message);
     if (fatal)
         exit(1);
