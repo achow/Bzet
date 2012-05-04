@@ -120,6 +120,7 @@ class BZET {
         bool at(int64_t bit) const;
         void setRange(int64_t start, int64_t len);
         void set(int64_t bit);
+        void seqset(int64_t bit);
         void unset(int64_t bit);
 
         int depth() const;
@@ -149,6 +150,7 @@ class BZET {
         void _printBzet(int stdOffset, FILE* target, int depth, size_t loc = 0, int offset = 0, bool pad = 0) const;
         int64_t _count(size_t loc, int depth) const;
         void subtree_not(size_t loc, int depth);
+        static void _seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth);
 
         size_t step_through(size_t loc) const;
 
@@ -505,6 +507,18 @@ void BZET::set(int64_t bit) {
     m_step = result.m_step;
     result.m_bzet = NULL;
     result.m_step = NULL;
+}
+
+// Sequential set, bit must be greater than the last bit set in the bzet
+void BZET::seqset(int64_t bit) {
+    if (empty())
+        set(bit);
+    else {
+        BZET temp(bit);
+        align(*this, temp);
+        _seqset(*this, 0, temp, 0, m_depth);
+        normalize();
+    }
 }
 
 // Unset a bit
@@ -1439,6 +1453,63 @@ int64_t BZET::_count(size_t loc, int depth) const {
     }
 
     return count;
+}
+
+// Implementation of seqset
+void BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth) {
+    // At depth 0, we are at the lowest level, set the bit and finish
+    if (depth == 0) {
+        b.m_bzet[locb] |= right.m_bzet[locright];
+        return;
+    }
+
+    halfnode_t& bdata_bits = b.m_bzet[locb];
+    halfnode_t& btree_bits = b.m_bzet[locb + 1];
+    //halfnode_t& rightdata_bits = right.m_bzet[locright];
+    halfnode_t& righttree_bits = right.m_bzet[locright + 1];
+
+    // Data bit higher up is set, we're done
+    if ((bdata_bits | righttree_bits) == bdata_bits) {
+        return;
+    }
+    // Same tree bit is set, recurse
+    else if ((btree_bits | righttree_bits) == btree_bits) {
+        // Skip all subtrees in b before the subtree we want
+        // TODO: use popcount to speed up?
+        size_t loc = locb;
+        locb += 2;
+        bool first = true;
+        for (int i = 0; i < NODE_ELS; i++)
+            if ((btree_bits >> i) & 1) {
+                if (!first)
+                    locb = b.step_through(locb);
+                else
+                    first = false;
+            }
+
+        // Recurse
+        _seqset(b, locb, right, locright + 2, depth - 1);
+
+        // Update step
+        if (b.m_nhalfnodes - loc > 255)
+            b.m_step[loc] = 0;
+        else
+            b.m_step[loc] = (unsigned char) (b.m_nhalfnodes - loc);
+        return;
+    }
+    // Tree bit is not on, set tree bit and append the subtree
+    else {
+        // Set tree bit
+        btree_bits |= righttree_bits;
+        // Append subtree
+        b.append_subtree(right, locright + 2);
+        // Update step
+        if (b.m_nhalfnodes - locb > 255)
+            b.m_step[locb] = 0;
+        else
+            b.m_step[locb] = (unsigned char) (b.m_nhalfnodes - locb);
+        return;
+    }
 }
 
 #endif // BZET_IMPL_
