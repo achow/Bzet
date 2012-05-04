@@ -161,6 +161,7 @@ class BZET {
         static size_t POW(int n);
         static int do_data_op(OP op, int left_data_bit, int right_data_bit);
         void append_subtree(BZET& src, size_t loc);
+        void set_step(size_t loc);
 
         size_t m_nbufhalfnodes;
         size_t m_nhalfnodes;
@@ -261,6 +262,15 @@ void BZET::append_subtree(BZET& src, size_t loc) {
     // Do copy
     memcpy(m_bzet + dst_loc, src.m_bzet + loc, copy_size * sizeof(halfnode_t));
     memcpy(m_step + dst_loc, src.m_step + loc, copy_size * sizeof(unsigned char));
+}
+
+// Build step at loc
+inline
+void BZET::set_step(size_t loc) {
+    if (m_nhalfnodes - loc > 255)
+        m_step[loc] = 0;
+    else 
+        m_step[loc] = (unsigned char) (m_nhalfnodes - loc);
 }
 
 #ifdef BZET_IMPL_
@@ -1152,10 +1162,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
     m_bzet[loc + 1] = node_tree;
 
     // Set step
-    if (m_nhalfnodes - loc > 255)
-        m_step[loc] = 0;
-    else 
-        m_step[loc] = (unsigned char) (m_nhalfnodes - loc);
+    set_step(loc);
 
     // If resulting node is empty
     if (node_tree == 0 && node_data == 0) {
@@ -1278,11 +1285,7 @@ void BZET::align(BZET& b1, BZET& b2) {
         for (int i = 0; i < diffdepth; i++) {
             b2.m_bzet[loc] = 0;
             b2.m_bzet[loc + 1] = (halfnode_t) ((halfnode_t) 0x1 << (NODE_ELS - 1));
-
-            if (b2.m_nhalfnodes - loc > 255)
-                b2.m_step[loc] = 0;
-            else
-                b2.m_step[loc] = (unsigned char) (b2.m_nhalfnodes - loc);
+            b2.set_step(loc);
 
             loc += 2;
         }
@@ -1304,11 +1307,7 @@ void BZET::align(BZET& b1, BZET& b2) {
         for (int i = 0; i < diffdepth; i++) {
             b1.m_bzet[loc] = 0;
             b1.m_bzet[loc + 1] = (halfnode_t) ((halfnode_t) 0x1 << (NODE_ELS - 1));
-
-            if (b1.m_nhalfnodes - loc > 255)
-                b1.m_step[loc] = 0;
-            else
-                b1.m_step[loc] = (unsigned char) (b1.m_nhalfnodes - loc);
+            b1.set_step(loc);
 
             loc += 2;
         }
@@ -1491,10 +1490,7 @@ void BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth
         _seqset(b, locb, right, locright + 2, depth - 1);
 
         // Update step
-        if (b.m_nhalfnodes - loc > 255)
-            b.m_step[loc] = 0;
-        else
-            b.m_step[loc] = (unsigned char) (b.m_nhalfnodes - loc);
+        b.set_step(loc);
         return;
     }
     // Tree bit is not on, set tree bit and append the subtree
@@ -1504,11 +1500,7 @@ void BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth
         // Append subtree
         b.append_subtree(right, locright + 2);
         // Update step
-        if (b.m_nhalfnodes - locb > 255)
-            b.m_step[locb] = 0;
-        else
-            b.m_step[locb] = (unsigned char) (b.m_nhalfnodes - locb);
-        return;
+        b.set_step(locb);
     }
 }
 
