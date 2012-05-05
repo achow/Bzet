@@ -276,8 +276,8 @@ void BZET::set_step(size_t loc, int depth) {
     if (locdiff > 255) {
         if (locdiff <= 256 * 256 - 1) {
             // MSB first
-            m_step[loc] = (unsigned char) (locdiff / 255);
-            m_step[loc + 1] = (unsigned char) (locdiff % 255);
+            m_step[loc] = (unsigned char) (locdiff / 256);
+            m_step[loc + 1] = (unsigned char) (locdiff % 256);
         }
         else {
             m_step[loc] = 0;
@@ -539,15 +539,12 @@ void BZET::set(int64_t bit) {
 // Sequential set, bit must be greater than the last bit set in the bzet
 void BZET::seqset(int64_t bit) {
     if (empty())
-        set(bit);
+        *this = BZET(bit);
     else {
         BZET temp(bit);
         align(*this, temp);
         bool ret = _seqset(*this, 0, temp, 0, m_depth);
-        if (ret)
-            set(bit);
-        else
-            normalize();
+        normalize();
     }
 }
 
@@ -1370,7 +1367,7 @@ size_t BZET::step_through(size_t loc, int depth) const {
         return loc + 1;
 
     // Get step offset
-    int step_offset = ((int) m_step[loc]) * 255 + (int) m_step[loc + 1];
+    int step_offset = ((int) m_step[loc]) * 256 + (int) m_step[loc + 1];
 
     // If the step offset is 0, the offset is too large to be actually stored
     // Compute it by examining the step of subtrees stemming from this node
@@ -1483,8 +1480,10 @@ bool BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth
     if (depth == 0) {
         b.m_bzet[locb] |= right.m_bzet[locright];
         // If node is saturated, signal seqset to "handle" it
-        if (b.m_bzet[locb] == (halfnode_t) -1)
+        if (b.m_bzet[locb] == (halfnode_t) -1) {
             return true;
+        }
+
         return false;
     }
 
