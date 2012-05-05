@@ -64,6 +64,15 @@ size_t const PASTE(powersof, NODE_ELS)[NPOWERS] =
 #error "Invalid NODE_ELS provided"
 #endif
 
+#if STEP_BYTES == 2
+typedef unsigned short step_t;
+#else
+#define STEP_BYTES 1
+typedef unsigned char step_t;
+#endif
+
+#define STEP_T_MAX ((size_t) 1 << (STEP_BYTES * 8))
+
 #define INITIAL_ALLOC 1024
 #define RESIZE_SCALE 2
 
@@ -162,11 +171,12 @@ class BZET {
         static int do_data_op(OP op, int left_data_bit, int right_data_bit);
         void append_subtree(BZET& src, size_t loc, int depth);
         void set_step(size_t loc, int depth);
+        void mod_step(size_t loc, int depth, int diff);
 
         size_t m_nbufhalfnodes;
         size_t m_nhalfnodes;
         halfnode_t* m_bzet; //points to the bzet
-        unsigned char* m_step; //points to an array that holds step_through values
+        step_t* m_step; //points to an array that holds step_through values
         unsigned char m_depth;
 };
 
@@ -185,13 +195,13 @@ void BZET::display_error(const char* message, bool fatal, FILE* output) {
 inline 
 void BZET::init(size_t initial_alloc) {
     // Allocate bzet node array
-    m_bzet = (halfnode_t*) malloc(initial_alloc * sizeof(halfnode_t));
+    m_bzet = (halfnode_t *) malloc(initial_alloc * sizeof(halfnode_t));
     if (!m_bzet) {
         display_error("init malloc failed\n", true);
     }
 
     // Allocate step array
-    m_step = (unsigned char*) malloc(initial_alloc * sizeof(unsigned char));
+    m_step = (step_t *) malloc(initial_alloc * sizeof(step_t));
     if (!m_step) {
         display_error("init malloc failed\n", true);
         free(m_bzet);
@@ -215,7 +225,7 @@ void BZET::resize(size_t nhalfnodes) {
         halfnode_t *bzet_temp = (halfnode_t *) realloc(m_bzet, m_nbufhalfnodes * sizeof(halfnode_t));
 
         // Reallocate step
-        unsigned char *step_temp = (unsigned char *) realloc(m_step, m_nbufhalfnodes * sizeof(unsigned char));
+        step_t *step_temp = (step_t *) realloc(m_step, m_nbufhalfnodes * sizeof(step_t));
 
         // Check that realloc succeeded
         // TODO: Replace with better checking above
@@ -261,7 +271,7 @@ void BZET::append_subtree(BZET& src, size_t loc, int depth) {
 
     // Do copy
     memcpy(m_bzet + dst_loc, src.m_bzet + loc, copy_size * sizeof(halfnode_t));
-    memcpy(m_step + dst_loc, src.m_step + loc, copy_size * sizeof(unsigned char));
+    memcpy(m_step + dst_loc, src.m_step + loc, copy_size * sizeof(step_t));
 }
 
 // Build step at loc
@@ -273,11 +283,11 @@ void BZET::set_step(size_t loc, int depth) {
     }
 
     size_t locdiff = m_nhalfnodes - loc;
-    if (locdiff > 255) {
-        if (locdiff <= 256 * 256 - 1) {
+    if (locdiff >= STEP_T_MAX) {
+        if (locdiff <= STEP_T_MAX * STEP_T_MAX - 1) {
             // MSB first
-            m_step[loc] = (unsigned char) (locdiff / 256);
-            m_step[loc + 1] = (unsigned char) (locdiff % 256);
+            m_step[loc] = (step_t) (locdiff / STEP_T_MAX);
+            m_step[loc + 1] = (step_t) (locdiff % STEP_T_MAX);
         }
         else {
             m_step[loc] = 0;
@@ -286,8 +296,20 @@ void BZET::set_step(size_t loc, int depth) {
     }
     else {
         m_step[loc] = 0;
-        m_step[loc + 1] = (unsigned char) locdiff;
+        m_step[loc + 1] = (step_t) locdiff;
     }
+}
+
+inline
+void BZET::mod_step(size_t loc, int depth, int diff) {
+    if (depth == 0)
+        return;
+
+    size_t step = m_step[loc] * STEP_T_MAX + m_step[loc + 1];
+    step -= diff;
+
+    m_step[loc] = (step_t) (step / STEP_T_MAX);
+    m_step[loc + 1] = (step_t) (step % STEP_T_MAX);
 }
 
 #ifdef BZET_IMPL_
@@ -342,7 +364,7 @@ BZET::BZET(int64_t bit) {
     // overflow since it would never happen (4^255 ~ 10^153)
     for (int i = 0; i < m_nhalfnodes; i += 2) {
         m_step[i] = 0;
-        m_step[i + 1] = (unsigned char) (m_nhalfnodes - i);
+        m_step[i + 1] = (step_t) (m_nhalfnodes - i);
     }
     m_step[m_nhalfnodes - 1] = 1;
 }
@@ -370,14 +392,14 @@ BZET::BZET(const BZET& b) {
         display_error("copy malloc failed\n", true);
     }
 
-    m_step = (unsigned char *) malloc(m_nbufhalfnodes * sizeof(unsigned char));
+    m_step = (step_t *) malloc(m_nbufhalfnodes * sizeof(step_t));
     if (!m_step) {
         display_error("copy malloc failed\n", true);
         free(m_bzet);
     }
 
     memcpy(m_bzet, b.m_bzet, m_nhalfnodes * sizeof(halfnode_t));
-    memcpy(m_step, b.m_step, m_nhalfnodes * sizeof(unsigned char));
+    memcpy(m_step, b.m_step, m_nhalfnodes * sizeof(step_t));
 }
 
 // Destructor
@@ -397,7 +419,7 @@ BZET& BZET::operator=(const BZET& right) {
     m_depth = right.m_depth;
 
     memcpy(m_bzet, right.m_bzet, m_nhalfnodes * sizeof(halfnode_t));
-    memcpy(m_step, right.m_step, m_nhalfnodes * sizeof(unsigned char));
+    memcpy(m_step, right.m_step, m_nhalfnodes * sizeof(step_t));
 
     return *this;
 }
@@ -423,7 +445,7 @@ BZET BZET::operator|(BZET& right) {
         return BZET(*this);
     // Otherwise just operate on them
     else {
-        return binop(*((BZET*) this), right, OP_OR);
+        return binop(*((BZET *) this), right, OP_OR);
     }
 }
 
@@ -434,7 +456,7 @@ BZET BZET::operator&(BZET& right) {
         return BZET();
     // Otherwise just operate on them
     else {
-        return binop(*((BZET*) this), right, OP_AND);
+        return binop(*((BZET *) this), right, OP_AND);
     }
 }
 
@@ -448,7 +470,7 @@ BZET BZET::operator^(BZET& right) {
         return BZET(*this);
     // Otherwise just operate on them
     else {
-        return binop(*((BZET*) this), right, OP_XOR);
+        return binop(*((BZET *) this), right, OP_XOR);
     }
 }
 
@@ -543,7 +565,7 @@ void BZET::seqset(int64_t bit) {
     else {
         BZET temp(bit);
         align(*this, temp);
-        bool ret = _seqset(*this, 0, temp, 0, m_depth);
+        _seqset(*this, 0, temp, 0, m_depth);
         normalize();
     }
 }
@@ -1295,7 +1317,7 @@ void BZET::align(BZET& b1, BZET& b2) {
 
         // Move bzet and step in b2 to accommodate new heading nodes
         memmove(b2.m_bzet + diffdepth * 2, b2.m_bzet, old_size * sizeof(halfnode_t));
-        memmove(b2.m_step + diffdepth * 2, b2.m_step, old_size * sizeof(unsigned char));
+        memmove(b2.m_step + diffdepth * 2, b2.m_step, old_size * sizeof(step_t));
 
         // Add new nodes and new step
         size_t loc = 0;
@@ -1317,7 +1339,7 @@ void BZET::align(BZET& b1, BZET& b2) {
 
         // Move bzet and step in b1 to accommodate new heading nodes
         memmove(b1.m_bzet + diffdepth * 2, b1.m_bzet, old_size * sizeof(halfnode_t));
-        memmove(b1.m_step + diffdepth * 2, b1.m_step, old_size * sizeof(unsigned char));
+        memmove(b1.m_step + diffdepth * 2, b1.m_step, old_size * sizeof(step_t));
 
         // Add new nodes and new step
         size_t loc = 0;
@@ -1346,10 +1368,12 @@ void BZET::normalize() {
     // If there are leading nodes that can be stripped
     if (leading) {
         // Modify depth
-        m_depth -= (unsigned char) leading;
+        m_depth -= (step_t) leading;
+
         // Move bzet and step
         memmove(m_bzet, m_bzet + loc, (m_nhalfnodes - loc) * sizeof(halfnode_t));
-        memmove(m_step, m_step + loc, (m_nhalfnodes - loc) * sizeof(unsigned char));
+        memmove(m_step, m_step + loc, (m_nhalfnodes - loc) * sizeof(step_t));
+
         // Resize
         resize(m_nhalfnodes - loc);
     }
@@ -1367,7 +1391,7 @@ size_t BZET::step_through(size_t loc, int depth) const {
         return loc + 1;
 
     // Get step offset
-    int step_offset = ((int) m_step[loc]) * 256 + (int) m_step[loc + 1];
+    size_t step_offset = ((size_t) m_step[loc]) * STEP_T_MAX + (size_t) m_step[loc + 1];
 
     // If the step offset is 0, the offset is too large to be actually stored
     // Compute it by examining the step of subtrees stemming from this node
