@@ -160,6 +160,7 @@ class BZET {
         int64_t _count(size_t loc, int depth) const;
         void subtree_not(size_t loc, int depth);
         static bool _seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth);
+        static bool _at(BZET& b, size_t locb, BZET& right, size_t locright, int depth);
 
         size_t step_through(size_t loc, int depth) const;
 
@@ -511,9 +512,13 @@ bool BZET::at(int64_t bit) const {
     // Test if a bit is set by ANDing the bzet with a bzet with only bit set
     // and checking if the result is empty
     // *this & Bzet(bit)
+    if (empty())
+        return false;
 
     BZET temp(bit);
-    return !(*((BZET*) this) & temp).empty();
+    align(*((BZET *) this), temp);
+    return _at(*((BZET *) this), 0, temp, 0, m_depth);
+    //return !(*((BZET*) this) & temp).empty();
 }
 
 // Set a range of bits
@@ -1552,6 +1557,46 @@ bool BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth
         // Update step
         // Cheat with depth since depth != 0
         b.set_step(locb, 1);
+        return false;
+    }
+}
+
+// Implementation of at
+bool BZET::_at(BZET& b, size_t locb, BZET& right, size_t locright, int depth) {
+    // At depth 0, we are at the lowest level, check if the bit is set
+    if (depth == 0) {
+        if (b.m_bzet[locb] & right.m_bzet[locright])
+            return true;
+
+        return false;
+    }
+
+    halfnode_t& bdata_bits = b.m_bzet[locb];
+    halfnode_t& btree_bits = b.m_bzet[locb + 1];
+    //halfnode_t& rightdata_bits = right.m_bzet[locright];
+    halfnode_t& righttree_bits = right.m_bzet[locright + 1];
+
+    // Data bit higher up is set, we're done. Bit found.
+    if (bdata_bits & righttree_bits) {
+        return true;
+    }
+    // Same tree bit is set, recurse
+    else if (btree_bits & righttree_bits) {
+        // Skip all subtrees in b before the subtree we want
+        locb += 2;
+        for (int i = NODE_ELS - 1; i >= 0; i--)
+            if ((btree_bits >> i) & (righttree_bits >> i)) {
+                break;
+            }
+            else if ((btree_bits >> i) & 1) {
+                locb = b.step_through(locb, depth - 1);
+            }
+
+        // Recurse
+        return _at(b, locb, right, locright + 2, depth - 1);
+    }
+    // Tree bit is not on, so bit is not set.
+    else {
         return false;
     }
 }
