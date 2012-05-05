@@ -150,7 +150,7 @@ class BZET {
         void _printBzet(int stdOffset, FILE* target, int depth, size_t loc = 0, int offset = 0, bool pad = 0) const;
         int64_t _count(size_t loc, int depth) const;
         void subtree_not(size_t loc, int depth);
-        static void _seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth);
+        static bool _seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth);
 
         size_t step_through(size_t loc, int depth) const;
 
@@ -543,8 +543,11 @@ void BZET::seqset(int64_t bit) {
     else {
         BZET temp(bit);
         align(*this, temp);
-        _seqset(*this, 0, temp, 0, m_depth);
-        normalize();
+        bool ret = _seqset(*this, 0, temp, 0, m_depth);
+        if (ret)
+            set(bit);
+        else
+            normalize();
     }
 }
 
@@ -1475,11 +1478,14 @@ int64_t BZET::_count(size_t loc, int depth) const {
 }
 
 // Implementation of seqset
-void BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth) {
+bool BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth) {
     // At depth 0, we are at the lowest level, set the bit and finish
     if (depth == 0) {
         b.m_bzet[locb] |= right.m_bzet[locright];
-        return;
+        // If node is saturated, signal seqset to "handle" it
+        if (b.m_bzet[locb] == (halfnode_t) -1)
+            return true;
+        return false;
     }
 
     halfnode_t& bdata_bits = b.m_bzet[locb];
@@ -1489,7 +1495,7 @@ void BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth
 
     // Data bit higher up is set, we're done
     if ((bdata_bits | righttree_bits) == bdata_bits) {
-        return;
+        return false;
     }
     // Same tree bit is set, recurse
     else if ((btree_bits | righttree_bits) == btree_bits) {
@@ -1507,12 +1513,12 @@ void BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth
             }
 
         // Recurse
-        _seqset(b, locb, right, locright + 2, depth - 1);
+        bool ret = _seqset(b, locb, right, locright + 2, depth - 1);
 
         // Update step
         // Cheat with depth since depth != 0
         b.set_step(loc, 1);
-        return;
+        return ret;
     }
     // Tree bit is not on, set tree bit and append the subtree
     else {
@@ -1523,6 +1529,7 @@ void BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth
         // Update step
         // Cheat with depth since depth != 0
         b.set_step(locb, 1);
+        return false;
     }
 }
 
