@@ -159,7 +159,7 @@ class BZET {
         void _printBzet(int stdOffset, FILE* target, int depth, size_t loc = 0, int offset = 0, bool pad = 0) const;
         int64_t _count(size_t loc, int depth) const;
         void subtree_not(size_t loc, int depth);
-        static bool _seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth);
+        static NODETYPE _seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth);
         static bool _at(BZET& b, size_t locb, BZET& right, size_t locright, int depth);
 
         size_t step_through(size_t loc, int depth) const;
@@ -1268,10 +1268,10 @@ void BZET::_printBzet(int stdOffset, FILE* target, int depth, size_t loc, int of
     // If depth is 0 or no tree bits are set, this is a data node
     if (depth == 0 || !tree_bits) {
         fprintf(target, "D(%.*X)\n", sizeof(halfnode_t) * 2, data_bits);
-        if (m_step[loc] != 1) {
+        /*if (m_step[loc] != 1) {
             printf("data node with step != 1 at %d, nhalf=%d\n", loc, m_nhalfnodes);
             exit(1);
-        }
+        }*/
     }
     // Otherwise this is a tree node
     else {     
@@ -1504,16 +1504,27 @@ int64_t BZET::_count(size_t loc, int depth) const {
 }
 
 // Implementation of seqset
-bool BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth) {
+NODETYPE BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth) {
     // At depth 0, we are at the lowest level, set the bit and finish
     if (depth == 0) {
         b.m_bzet[locb] |= right.m_bzet[locright];
-        // If node is saturated, signal seqset to "handle" it
+        // If node is saturated, drop this nodes and signal it was dropped
         if (b.m_bzet[locb] == (halfnode_t) -1) {
-            return true;
+            // If this is the only node
+            if (b.m_nhalfnodes == 1) {
+                b.resize(2);
+                b.m_bzet[0] = ((halfnode_t) 1 << (NODE_ELS - 1));
+                b.m_bzet[1] = 0;
+                b.m_step[0] = 2;
+                b.m_depth = 1;
+                return NORMAL;
+            }
+
+            b.resize(b.m_nhalfnodes - 1);
+            return SATURATED;
         }
 
-        return false;
+        return NORMAL;
     }
 
     halfnode_t& bdata_bits = b.m_bzet[locb];
@@ -1523,7 +1534,7 @@ bool BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth
 
     // Data bit higher up is set, we're done
     if ((bdata_bits | righttree_bits) == bdata_bits) {
-        return false;
+        return NORMAL;
     }
     // Same tree bit is set, recurse
     else if ((btree_bits | righttree_bits) == btree_bits) {
@@ -1541,12 +1552,32 @@ bool BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth
             }
 
         // Recurse
-        bool ret = _seqset(b, locb, right, locright + 2, depth - 1);
+        NODETYPE ret = _seqset(b, locb, right, locright + 2, depth - 1);
+        if (ret == SATURATED) {
+            // Flip tree and data bits
+            bdata_bits ^= righttree_bits;
+            btree_bits ^= righttree_bits;
+            // If this node is saturated
+            if (b.m_bzet[loc] == (halfnode_t) -1) {
+                // If this is the only node
+                if (b.m_nhalfnodes == 2) {
+                    b.resize(2);
+                    b.m_bzet[0] = ((halfnode_t) 1 << (NODE_ELS - 1));
+                    b.m_bzet[1] = 0;
+                    b.m_step[0] = 2;
+                    b.m_depth++;
+                    return NORMAL;
+                }
+
+                b.resize(b.m_nhalfnodes - 2);
+                return SATURATED;
+            }
+        }
 
         // Update step
         // Cheat with depth since depth != 0
-        b.set_step(loc, 1);
-        return ret;
+        b.set_step(loc, 1);        
+        return NORMAL;
     }
     // Tree bit is not on, set tree bit and append the subtree
     else {
@@ -1557,7 +1588,7 @@ bool BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth
         // Update step
         // Cheat with depth since depth != 0
         b.set_step(locb, 1);
-        return false;
+        return NORMAL;
     }
 }
 
