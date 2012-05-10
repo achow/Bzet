@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Generic code for Bzet8/Bzet16/Bzet32
+ * Generic code for Bzet8/Bzet16/Bzet32/Bzet64
  *
  * Things to do:
  *  - Good error messages, better error handling in general (?)
@@ -142,6 +142,8 @@ class BZET {
 
         void hex(void* str) const;
         void printBzet(int stdOffset = 0, FILE* target = stdout) const;
+        void exportTo(FILE* stream) const;
+        void importFrom(FILE* stream, size_t size);
 
 		int64_t firstBit() const;
         int64_t lastBit() const;
@@ -161,6 +163,7 @@ class BZET {
         void subtree_not(size_t loc, int depth);
         static NODETYPE _seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth);
         static bool _at(BZET& b, size_t locb, BZET& right, size_t locright, int depth);
+        size_t build_step(size_t loc = 0);
 
         size_t step_through(size_t loc, int depth) const;
 
@@ -708,6 +711,59 @@ void BZET::hex(void *buf) const {
     unsigned char *charbuf = (unsigned char *) buf;
     charbuf[0] = m_depth;
     memcpy(charbuf + 1, m_bzet, m_nhalfnodes * sizeof(halfnode_t));
+}
+
+void BZET::exportTo(FILE* stream) const {
+    // Write depth out
+    fwrite((void *) &m_depth, 1, 1, stream);
+
+    // Write out bzet in little endian
+    int endian_test = 1;
+    // Little endian
+    if (((unsigned char *) &endian_test)[0] == 1) {
+        fwrite(m_bzet, sizeof(halfnode_t), m_nhalfnodes, stream);
+    }
+    // Big endian
+    else {
+        for (size_t i = 0; i < m_nhalfnodes; i++) {
+            // Write out current halfnode in little endian
+            halfnode_t curhalf = m_bzet[i];
+            for (size_t byte = 0; byte < sizeof(halfnode_t); byte++) {
+                fwrite((unsigned char *) &curhalf + byte, 1, 1, stream);
+            }
+        }
+    }
+}
+
+void BZET::importFrom(FILE* stream, size_t size) {
+    // Read depth byte
+    fread(&m_depth, 1, 1, stream);
+
+    // Resize to accommodate bzet
+    resize((size - 1) / sizeof(halfnode_t));
+
+    // Read in bzet
+    int endian_test = 1;
+    // Little endian
+    if (((unsigned char *) &endian_test)[0] == 1) {
+        fread(m_bzet, size - 1);
+    }
+    // Big endian
+    else {
+        for (size_t i = 0; i < m_nhalfnodes; i++) {
+            // Read in halfnodes as big endian
+            halfnode_t curhalf = 0;
+            unsigned char bytestage = 0x00;
+            for (size_t byte = 0; byte < sizeof(halfnode_t); byte++) {
+                fread(&bytestage, 1, 1, stream);
+                curhalf |= (halfnode_t) bytestage << (byte * CHAR_BIT);
+            }
+            m_bzet[i] = curhalf;
+        }
+    }
+
+    // Build m_step
+    build_step();
 }
 
 // Clears the bzet
@@ -1630,6 +1686,9 @@ bool BZET::_at(BZET& b, size_t locb, BZET& right, size_t locright, int depth) {
     else {
         return false;
     }
+}
+
+size_t BZET::build_step(size_t loc) {
 }
 
 #endif // BZET_IMPL_
