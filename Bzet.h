@@ -151,6 +151,16 @@ class BZET {
         int64_t getBits(int64_t* bits, int64_t limit = 0, int64_t start = 0);
 		bool empty() const;
 
+        /*void printStep() {
+            for (size_t i = 0; i < m_nhalfnodes; i++) {
+                if ((i % 10) == 0)
+                    printf("\n");
+                printf("0x%.*X ", sizeof(step_t) * 2, (step_t) m_step[i]);
+                //printf("%d ", m_step[i]);
+            }
+            printf("\n");
+        }*/
+
     private:
 #ifdef USE_LITERAL
         //BZET_PTR bitstobzet(void *data, size_t len);
@@ -163,7 +173,7 @@ class BZET {
         void subtree_not(size_t loc, int depth);
         static NODETYPE _seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth);
         static bool _at(BZET& b, size_t locb, BZET& right, size_t locright, int depth);
-        size_t build_step(size_t loc = 0);
+        size_t build_step(size_t loc, int depth);
 
         size_t step_through(size_t loc, int depth) const;
 
@@ -746,7 +756,7 @@ void BZET::importFrom(FILE* stream, size_t size) {
     int endian_test = 1;
     // Little endian
     if (((unsigned char *) &endian_test)[0] == 1) {
-        fread(m_bzet, size - 1);
+        fread(m_bzet, 1, size - 1, stream);
     }
     // Big endian
     else {
@@ -763,7 +773,7 @@ void BZET::importFrom(FILE* stream, size_t size) {
     }
 
     // Build m_step
-    build_step();
+    build_step(0, m_depth);
 }
 
 // Clears the bzet
@@ -1688,7 +1698,36 @@ bool BZET::_at(BZET& b, size_t locb, BZET& right, size_t locright, int depth) {
     }
 }
 
-size_t BZET::build_step(size_t loc) {
+size_t BZET::build_step(size_t loc, int depth) {
+    if (depth == 0) {
+        m_step[loc] = 1;
+        return 1;
+    }
+
+    bool overflow = false;
+    size_t step = 2;
+    size_t curloc = loc;
+
+    halfnode_t tree_bits = m_bzet[loc + 1];
+    loc += 2;
+    for (size_t i = 0; i < NODE_ELS; i++) {
+        if ((tree_bits >> i) & 1) {
+            size_t s = build_step(loc, depth - 1);
+            if (overflow || s == 0) {
+                step = 0;
+                overflow = true;
+            }
+            else
+                step += s;
+                
+            loc = step_through(loc, depth - 1);
+        }
+    }
+
+    m_step[curloc] = (step_t) (step / STEP_T_MAX);
+    m_step[curloc + 1] = (step_t) (step % STEP_T_MAX);
+
+    return step;
 }
 
 #endif // BZET_IMPL_
