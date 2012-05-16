@@ -60,6 +60,11 @@ typedef uint8_t halfnode_t;
 #define NPOWERS 11
 size_t const PASTE(powersof, NODE_ELS)[NPOWERS] = 
     { 1, 8, 64, 512, 4096, 32768, 262144, 2097152, 16777216, 134217728, 1073741824 };
+#elif NODE_ELS == 4
+typedef uint8_t node_t;
+#define NPOWERS 17
+size_t const PASTE(powersof, NODE_ELS)[NPOWERS] = 
+    { 1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576, 4194304, 16777216, 67108864, 268435456, 1073741824};
 #else
 #error "Invalid NODE_ELS provided"
 #endif
@@ -180,16 +185,26 @@ class BZET {
         // Inline auxiliary functions
         static void display_error(const char* message, bool fatal = false, FILE* output = stderr);
         void init(size_t initial_alloc = INITIAL_ALLOC);
+#if NODE_ELS == 4
+        void resize(size_t nnodes);
+#else
         void resize(size_t nhalfnodes);
+#endif
         static size_t POW(int n);
         static int do_data_op(OP op, int left_data_bit, int right_data_bit);
         void append_subtree(BZET& src, size_t loc, int depth);
         void set_step(size_t loc, int depth);
         void mod_step(size_t loc, int depth, int diff);
 
+#if NODE_ELS == 4
+        size_t m_nbufnodes;
+        size_t m_nnodes;
+        node_t* m_bzet;
+#else
         size_t m_nbufhalfnodes;
         size_t m_nhalfnodes;
         halfnode_t* m_bzet; //points to the bzet
+#endif
         step_t* m_step; //points to an array that holds step_through values
         unsigned char m_depth;
 };
@@ -209,7 +224,11 @@ void BZET::display_error(const char* message, bool fatal, FILE* output) {
 inline 
 void BZET::init(size_t initial_alloc) {
     // Allocate bzet node array
+#if NODE_ELS == 4
+    m_bzet = (node_t *) malloc(initial_alloc * sizeof(node_t));
+#else
     m_bzet = (halfnode_t *) malloc(initial_alloc * sizeof(halfnode_t));
+#endif
     if (!m_bzet) {
         display_error("init malloc failed\n", true);
     }
@@ -222,12 +241,46 @@ void BZET::init(size_t initial_alloc) {
     }
 
     m_depth = 0;
+#if NODE_ELS == 4
+    m_nnodes = 0;
+    m_nbufhalfnodes = INITIAL_ALLOC;
+#else
     m_nhalfnodes = 0;
     m_nbufhalfnodes = INITIAL_ALLOC;
+#endif
 }
 
 // Resizes the buffers in the Bzet if necessary
 inline
+#if NODE_ELS == 4
+void BZET::resize(size_t nnodes) {
+    // If reallocation is required
+    if (nnodes > m_nbufnodes) {
+        // Get new size required by growing it by RESIZE_SCALE repeatedly
+        while (nnodes > m_nbufnodes)
+            m_nbufnodes *= RESIZE_SCALE;
+
+        // Reallocate bzet
+        node_t *bzet_temp = (node_t *) realloc(m_bzet, m_nbufnodes * sizeof(node_t));
+
+        // Reallocate step
+        step_t *step_temp = (step_t *) realloc(m_step, m_nbufnodes * sizeof(step_t));
+
+        // Check that realloc succeeded
+        // TODO: Replace with better checking above
+        if (!m_bzet || !m_step) {
+            fprintf(stderr, "Fatal error: Resizing bzet failed attempting to allocate %l bytes\n", m_nbufnodes * sizeof(node_t));
+            display_error("", true);
+        }
+
+        m_bzet = bzet_temp;
+        m_step = step_temp;
+    }
+
+    // Update internal halfnode counter
+    m_nnodes = nnodes;
+}
+#else
 void BZET::resize(size_t nhalfnodes) {
     // If reallocation is required
     if (nhalfnodes > m_nbufhalfnodes) {
@@ -255,6 +308,7 @@ void BZET::resize(size_t nhalfnodes) {
     // Update internal halfnode counter
     m_nhalfnodes = nhalfnodes;
 }
+#endif
 
 // Trusty fast pow8/pow16/pow32 (assumes n >= 0)
 inline
@@ -766,7 +820,7 @@ void BZET::importFrom(FILE* stream, size_t size) {
             unsigned char bytestage = 0x00;
             for (size_t byte = 0; byte < sizeof(halfnode_t); byte++) {
                 fread(&bytestage, 1, 1, stream);
-                curhalf |= (halfnode_t) bytestage << (byte * CHAR_BIT);
+                curhalf |= (halfnode_t) bytestage << (byte * 8);
             }
             m_bzet[i] = curhalf;
         }
