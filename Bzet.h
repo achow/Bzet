@@ -2318,6 +2318,7 @@ NODETYPE BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int d
     //halfnode_t& rightdata_bits = right.m_bzet[locright];
     halfnode_t& righttree_bits = right.m_bzet[locright + 1];
 #endif
+    size_t loc = locb;
 
     // Data bit higher up is set, we're done
     if ((bdata_bits | righttree_bits) == bdata_bits) {
@@ -2327,7 +2328,6 @@ NODETYPE BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int d
     else if ((btree_bits | righttree_bits) == btree_bits) {
         // Skip all subtrees in b before the subtree we want
         // TODO: use popcount to speed up?
-        size_t loc = locb;
 #if NODE_ELS == 4
         locb++;
 #else
@@ -2351,7 +2351,7 @@ NODETYPE BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int d
         if (ret == SATURATED) {
 #if NODE_ELS == 4
             // Flip tree and data bits
-            m_bzet[loc] ^= ((righttree_bits << NODE_ELS) | righttree_bits);
+            b.m_bzet[loc] ^= ((righttree_bits << NODE_ELS) | righttree_bits);
 
             // If this node is saturated
             if (b.m_bzet[loc] == 0xFF) {
@@ -2396,7 +2396,7 @@ NODETYPE BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int d
     else {
 #if NODE_ELS == 4
         // Set tree bit
-        m_bzet[loc] |= righttree_bits;
+        b.m_bzet[loc] |= righttree_bits;
         // Append subtree
         b.append_subtree(right, locright + 1, depth - 1);
 #else
@@ -2477,7 +2477,7 @@ bool BZET::_at(BZET& b, size_t locb, BZET& right, size_t locright, int depth) {
 
 size_t BZET::build_step(size_t loc, int depth) {
 #if NODE_ELS == 4
-    if (de[th == 1) {
+    if (depth == 1) {
         m_step[loc] = 2;
         return 2;
     }
@@ -2518,7 +2518,7 @@ size_t BZET::build_step(size_t loc, int depth) {
     if (m_step[curloc] >= STEP_T_MAX)
         m_step[curloc] = 0;
     else
-        m_step[curloc] = STEP_T_MAX;
+        m_step[curloc] = (step_t) STEP_T_MAX;
 #else
     m_step[curloc] = (step_t) (step / STEP_T_MAX);
     m_step[curloc + 1] = (step_t) (step % STEP_T_MAX);
