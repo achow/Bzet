@@ -990,7 +990,11 @@ int BZET::depth() const {
 
 // Get size of bzet
 size_t BZET::size() const {
+#if NODE_ELS == 4
+    return (m_nnodes + 1);
+#else
     return (m_nhalfnodes * sizeof(halfnode_t) + 1);
+#endif
 }
 
 // Prints out Bzet tree in human-readable form
@@ -1002,13 +1006,20 @@ void BZET::printBzet(int stdOffset, FILE* target) const {
 void BZET::hex(void *buf) const {
     unsigned char *charbuf = (unsigned char *) buf;
     charbuf[0] = m_depth;
+#if NODE_ELS == 4
+    memcpy(charbuf + 1, m_bzet, m_nnodes * sizeof(node_t));
+#else
     memcpy(charbuf + 1, m_bzet, m_nhalfnodes * sizeof(halfnode_t));
+#endif
 }
 
 void BZET::exportTo(FILE* stream) const {
     // Write depth out
     fwrite((void *) &m_depth, 1, 1, stream);
 
+#if NODE_ELS == 4
+    fwrite(m_bzet, sizeof(node_t), m_nnodes, stream);
+#else
     // Write out bzet in little endian
     int endian_test = 1;
     // Little endian
@@ -1025,12 +1036,19 @@ void BZET::exportTo(FILE* stream) const {
             }
         }
     }
+#endif
 }
 
 void BZET::importFrom(FILE* stream, size_t size) {
     // Read depth byte
     fread(&m_depth, 1, 1, stream);
 
+#if NODE_ELS == 4
+    resize((size - 1) / sizeof(node_t));
+
+    // Read in bzet
+    fread(m_bzet, 1, size - 1, stream);
+#else
     // Resize to accommodate bzet
     resize((size - 1) / sizeof(halfnode_t));
 
@@ -1053,6 +1071,7 @@ void BZET::importFrom(FILE* stream, size_t size) {
             m_bzet[i] = curhalf;
         }
     }
+#endif
 
     // Build m_step
     build_step(0, m_depth);
@@ -1599,6 +1618,52 @@ void BZET::_printBzet(int stdOffset, FILE* target, int depth, size_t loc, int of
             fprintf(target, "\n");
     }
 
+#if NODE_ELS == 4
+    // No reading past the bzet!
+    if (loc >= size())
+        return;
+
+    unsigned char c = m_bzet[loc];
+    unsigned char data_bits = (c >> NODE_ELS) & 0xF;
+    unsigned char tree_bits = c & 0xF;
+
+    // Print offset if any
+    if (pad) {
+        int blanks = 5*offset + 3 + stdOffset;
+        for (int j = 0; j < blanks; j++)
+            fprintf(target, " ");
+    }
+
+    // If depth is 1, print special level 1 interpretation
+    if (depth == 1) {   
+        fprintf(target, "D(%.2X%.2X)\n", m_bzet[loc], m_bzet[loc + 1]);
+    } 
+    // If no tree bits on, then this is a data node
+    else if ((c & 0xF0) == c) {
+        fprintf(target, "D(%X)\n", data_bits);
+    }
+    else {     
+        // Print the current node
+        fprintf(target, "[%X-%X]", data_bits, tree_bits);
+
+        // Recursively print child nodes
+        bool firstNode = true;
+        depth--;
+        for (int i = NODE_ELS - 1; i >= 0; --i) {
+            // If tree bit set
+            if ((tree_bits >> i) & 0x1) {
+                // Print first node without offset
+                if (firstNode) {
+                    _printBzet(stdOffset, target, loc + 1, depth, offset + 1);
+                    firstNode = false;
+                } else {
+                    _printBzet(stdOffset, target, stepThrough(loc + 1), depth, offset + 1, true);
+                    loc = stepThrough(loc + 1) - 1;
+                }
+            }
+        }
+    }
+#else
     // No reading past the bzet!
     if (loc >= m_nhalfnodes)
         return;
@@ -1651,6 +1716,7 @@ void BZET::_printBzet(int stdOffset, FILE* target, int depth, size_t loc, int of
             }
         }
     }
+#endif
 }
 
 void BZET::align(BZET& b1, BZET& b2) {
@@ -1711,6 +1777,29 @@ void BZET::align(BZET& b1, BZET& b2) {
 }
 
 void BZET::normalize() {
+#if NODE_ELS == 4
+    //no need to normalize bzet with only 1 level
+    if (m_bzet[0] == 0x01)
+        return;
+
+    //count leading 0x08 nodes
+    int leading = 0;
+    while (m_bzet[leading] == 0x08)
+        leading++;
+
+    // If there are leading 0x08 nodes, get rid of them
+    if (leading) {
+        // Modify depth
+        m_depth -= (unsigned char) leading;
+
+        // Move bzet and step
+        memmove(m_bzet, m_bzet + leading, (m_nnodes - leading) * sizeof(node_t));
+        memmove(m_step, m_step + leading, (m_nnodes - leading) * sizeof(step_t));
+
+        // Resize
+        resize(m_nnodes - leading);
+    }
+#else
     int leading = 0;
     int loc = 0;
     int depth = m_depth;
@@ -1725,7 +1814,7 @@ void BZET::normalize() {
     // If there are leading nodes that can be stripped
     if (leading) {
         // Modify depth
-        m_depth -= (step_t) leading;
+        m_depth -= (unsigned char) leading;
 
         // Move bzet and step
         memmove(m_bzet, m_bzet + loc, (m_nhalfnodes - loc) * sizeof(halfnode_t));
@@ -1734,6 +1823,7 @@ void BZET::normalize() {
         // Resize
         resize(m_nhalfnodes - loc);
     }
+#endif
 }
 
 size_t BZET::step_through(size_t loc, int depth) const {
