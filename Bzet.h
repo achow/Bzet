@@ -2267,9 +2267,28 @@ int64_t BZET::_count(size_t loc, int depth) const {
 // Implementation of seqset
 NODETYPE BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth) {
     // At depth 0, we are at the lowest level, set the bit and finish
+#if NODE_ELS == 4
+    if (depth == 1) {
+#else
     if (depth == 0) {
+#endif
         b.m_bzet[locb] |= right.m_bzet[locright];
-        // If node is saturated, drop this nodes and signal it was dropped
+#if NODE_ELS == 4
+        b.m_bzet[locb + 1] |= right.m_bzet[locright];
+        // If node is saturated, drop these node and signal it was dropped
+        if (b.m_bzet[locb] == 0xFF && b.m_bzet[locb + 1] == 0xFF) {
+            // If these are the only nodes
+            if (b.m_nnodes == 2) {
+                b.resize(1);
+                b.m_bzet[0] = 0x80;
+                b.m_step[0] = 1;
+                b.m_depth = 2;
+                return NORMAL;
+            }
+
+            b.resize(b.m_nnodes - 1);
+#else
+        // If node is saturated, drop this node and signal it was dropped
         if (b.m_bzet[locb] == (halfnode_t) -1) {
             // If this is the only node
             if (b.m_nhalfnodes == 1) {
@@ -2282,16 +2301,23 @@ NODETYPE BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int d
             }
 
             b.resize(b.m_nhalfnodes - 1);
+#endif
             return SATURATED;
         }
 
         return NORMAL;
     }
 
+#if NODE_ELS == 4
+    node_t bdata_bits = b.m_bzet[locb] >> NODE_ELS;
+    node_t btree_bits = b.m_bzet[locb] & 0xF;
+    node_t righttree_bits = right.m_bzet[locright] & 0xF;
+#else
     halfnode_t& bdata_bits = b.m_bzet[locb];
     halfnode_t& btree_bits = b.m_bzet[locb + 1];
     //halfnode_t& rightdata_bits = right.m_bzet[locright];
     halfnode_t& righttree_bits = right.m_bzet[locright + 1];
+#endif
 
     // Data bit higher up is set, we're done
     if ((bdata_bits | righttree_bits) == bdata_bits) {
@@ -2302,7 +2328,11 @@ NODETYPE BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int d
         // Skip all subtrees in b before the subtree we want
         // TODO: use popcount to speed up?
         size_t loc = locb;
+#if NODE_ELS == 4
+        locb++;
+#else
         locb += 2;
+#endif
         bool first = true;
         for (int i = 0; i < NODE_ELS; i++)
             if ((btree_bits >> i) & 1) {
@@ -2313,11 +2343,32 @@ NODETYPE BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int d
             }
 
         // Recurse
+#if NODE_ELS == 4
+        NODETYPE ret = _seqset(b, locb, right, locright + 1, depth - 1);
+#else
         NODETYPE ret = _seqset(b, locb, right, locright + 2, depth - 1);
+#endif
         if (ret == SATURATED) {
+#if NODE_ELS == 4
+            // Flip tree and data bits
+            m_bzet[loc] ^= ((righttree_bits << NODE_ELS) | righttree_bits);
+
+            // If this node is saturated
+            if (b.m_bzet[loc] == 0xFF) {
+                // If this is the only node
+                if (b.m_nnodes == 1) {
+                    b.resize(1);
+                    b.m_bzet[0] = 0x80;
+                    b.m_step[0] = 1;
+                    b.m_depth++;
+                }
+
+                b.resize(b.m_nnodes - 1);
+#else
             // Flip tree and data bits
             bdata_bits ^= righttree_bits;
             btree_bits ^= righttree_bits;
+
             // If this node is saturated
             if (b.m_bzet[loc] == (halfnode_t) -1) {
                 // If this is the only node
@@ -2331,6 +2382,7 @@ NODETYPE BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int d
                 }
 
                 b.resize(b.m_nhalfnodes - 2);
+#endif
                 return SATURATED;
             }
         }
@@ -2342,10 +2394,17 @@ NODETYPE BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int d
     }
     // Tree bit is not on, set tree bit and append the subtree
     else {
+#if NODE_ELS == 4
+        // Set tree bit
+        m_bzet[loc] |= righttree_bits;
+        // Append subtree
+        b.append_subtree(right, locright + 1, depth - 1);
+#else
         // Set tree bit
         btree_bits |= righttree_bits;
         // Append subtree
         b.append_subtree(right, locright + 2, depth - 1);
+#endif
         // Update step
         // Cheat with depth since depth != 0
         b.set_step(locb, 1);
@@ -2417,17 +2476,30 @@ bool BZET::_at(BZET& b, size_t locb, BZET& right, size_t locright, int depth) {
 }
 
 size_t BZET::build_step(size_t loc, int depth) {
+#if NODE_ELS == 4
+    if (de[th == 1) {
+        m_step[loc] = 2;
+        return 2;
+    }
+#else
     if (depth == 0) {
         m_step[loc] = 1;
         return 1;
     }
+#endif
 
     bool overflow = false;
-    size_t step = 2;
     size_t curloc = loc;
 
+#if NODE_ELS == 4
+    size_t step = 1;
+    node_t tree_bits = m_bzet[loc] & 0xF;
+    loc++;
+#else
+    size_t step = 2;
     halfnode_t tree_bits = m_bzet[loc + 1];
     loc += 2;
+#endif
     for (size_t i = 0; i < NODE_ELS; i++) {
         if ((tree_bits >> i) & 1) {
             size_t s = build_step(loc, depth - 1);
@@ -2442,8 +2514,15 @@ size_t BZET::build_step(size_t loc, int depth) {
         }
     }
 
+#if NODE_ELS == 4
+    if (m_step[curloc] >= STEP_T_MAX)
+        m_step[curloc] = 0;
+    else
+        m_step[curloc] = STEP_T_MAX;
+#else
     m_step[curloc] = (step_t) (step / STEP_T_MAX);
     m_step[curloc + 1] = (step_t) (step % STEP_T_MAX);
+#endif
 
     return step;
 }
