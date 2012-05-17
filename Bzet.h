@@ -1949,7 +1949,8 @@ void BZET::align(BZET& b1, BZET& b2) {
         // Add new nodes and new step
         size_t loc = 0;
         for (int i = 0; i < diffdepth; i++) {
-            b2.m_bzet[loc] = 0x80;
+            b2.m_bzet[loc] = 0;
+            b2.m_bzet[loc + 1] = (halfnode_t) ((halfnode_t) 0x1 << (NODE_ELS - 1));
             b2.set_step(loc, 2); // Cheat with this parameter since depth != 0
 
             loc += 2;
