@@ -1304,6 +1304,71 @@ void treetobits(halfnode_t *dst, halfnode_t *node, int depth) {
 #endif
 
 NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, size_t right_loc) {
+#if NODE_ELS == 4
+    // Handle level 1 operations
+    if (lev == 1) {
+        node_t c_left = left.m_bzet[left_loc];
+        node_t c_right = right.m_bzet[right_loc];
+
+        // Build data nodes 0 and 1
+        node_t result_c1 = 0x00;
+        for (int i = 7; i >= 0; --i) {
+            int bita = (c_left >> i) & 1;
+            int bitb = (c_right >> i) & 1;
+            result_c1 |= (do_data_op(op, bita, bitb) << i);
+        }
+
+        // Get corresponding data nodes 2 and 3
+        c_left = left.m_bzet[left_loc + 1];
+        c_right = right.m_bzet[right_loc + 1];
+
+        // Build data nodes 2 and 3
+        node_t char result_c2 = 0x00;
+        for (int i = 7; i >= 0; --i) {
+            int bita = (c_left >> i) & 1;
+            int bitb = (c_right >> i) & 1;
+            result_c2 |= (do_data_op(op, bita, bitb) << i);
+        }
+
+        // Saturated node
+        if (result_c1 == 0xFF && result_c2 == 0xFF) {
+            // Build bzet manually if bzet is saturated
+            if (empty()) {
+                resize(2);
+                m_bzet[0]++;
+                m_bzet[1] = 0x80;
+                m_step[1] = 1;
+                return NORMAL;
+            }
+
+            return SATURATED;
+        }
+        // Empty node
+        else if (!result_c1 && !result_c2) {
+            // Build bzet manually if bzet is empty
+            if (empty()) {
+                clear();
+                return NORMAL;
+            }
+
+            return EMPTY;
+        }
+
+        // Otherwise commit data
+        // Create two nodes to accommodate data nodes
+        resize(m_size + 2);
+
+        // Write result
+        m_bzet[loc] = result_c1;
+        m_bzet[loc + 1] = result_c2;
+
+        /*// Set steps
+        m_step[loc] = 2;
+        m_step[loc + 1] = 1;*/
+        
+        return NORMAL;
+    }
+#else
     // Handle level 0 bit operations
     if (lev == 0) {
         halfnode_t node_data = 0;
@@ -1339,29 +1404,53 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
             return NORMAL;
         }
     }
+#endif
 
     // Get corresponding nodes of the left and right tree
+#if NODE_ELS == 4
+    node_t c_left = left.m_bzet[left_loc];
+    node_t c_right = right.m_bzet[right_loc];
+    left_loc++;
+    right_loc++;
+#else 
     halfnode_t c_left_data = left.m_bzet[left_loc];
     halfnode_t c_left_tree = left.m_bzet[left_loc + 1];
     halfnode_t c_right_data = right.m_bzet[right_loc];
     halfnode_t c_right_tree = right.m_bzet[right_loc + 1];
     left_loc += 2;
     right_loc += 2;
+#endif
 
     // Create new node to hold data
+#if NODE_ELS == 4
+    node_t new_node = 0;
+#else
     halfnode_t node_data = 0;
     halfnode_t node_tree = 0;
+#endif
 
     // Reserve space for this node
+#if NODE_ELS == 4
+    size_t loc = m_nnodes;
+    resize(m_nnodes + 1);
+#else
     size_t loc = m_nhalfnodes;
     resize(m_nhalfnodes + 2);
+#endif
 
     // For each element in the node
     for (int i = NODE_ELS - 1; i >= 0; i--) {
+#if NODE_ELS == 4
+        int cur_left_tree_bit = (c_left >> i) & 0x1;
+        int cur_left_data_bit = (c_left >> (i + NODE_ELS)) & 0x1;
+        int cur_right_tree_bit = (c_right >> i) & 0x1;
+        int cur_right_data_bit = (c_right >> (i + NODE_ELS)) & 0x1;
+#else
         int cur_left_tree_bit = (c_left_tree >> i) & 0x1;
         int cur_left_data_bit = (c_left_data >> i) & 0x1;
         int cur_right_tree_bit = (c_right_tree >> i) & 0x1;
         int cur_right_data_bit = (c_right_data >> i) & 0x1;
+#endif
         
         // TT: If both tree bits are on
         if (cur_left_tree_bit && cur_right_tree_bit) {
@@ -1385,14 +1474,22 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
                 // Saturated subtree
                 if (cn == SATURATED) {
                     // Turn on data bit
+#if NODE_ELS == 4
+                    new_nodes |= 0x10 << i;
+#else
                     node_data = (node_data << 1) | 0x1;
                     node_tree <<= 1;
+#endif
                 }
                 // Empty subtree
                 else if (cn == EMPTY) {
+#if NODE_ELS == 4
+                    // Do nothing, element is already set to 0
+#else
                     // Shift data and tree nodes over
                     node_data <<= 1;
                     node_tree <<= 1;
+#endif
                 }
                 // "Tree" subtree
                 else if (cn == NORMAL) {
@@ -1402,7 +1499,12 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
                 }
                 // Otherwise data literal subtree
                 else {
+#if NODE_ELS == 4
+                    // Subtree exists, turn on tree bit
+                    new_node |= 0x01 << i;
+#else
                     // TODO: Handle data literal subtree
+#endif
                 }
 
                 // Advance location pointers
@@ -1446,8 +1548,11 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
                     left_loc = left.step_through(left_loc, lev - 1);
 
                     // Data bit is already 0
+#if NODE_ELS == 4
+#else
                     node_data <<= 1;
                     node_tree <<= 1;
+#endif
 
                     break;
 
@@ -1457,8 +1562,11 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
                     right_loc = right.step_through(right_loc, lev - 1);
 
                     // Data bit is already 0
+#if NODE_ELS == 4
+#else
                     node_data <<= 1;
                     node_tree <<= 1;
+#endif
 
                     break;
 
@@ -1468,8 +1576,12 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
                     left_loc = left.step_through(left_loc, lev - 1);
 
                     // Turn on data bit
+#if NODE_ELS == 4
+                    new_node |= 0x80 >> ((NODE_ELS - 1) - i);
+#else
                     node_data = (node_data << 1) | 0x1;
                     node_tree <<= 1;
+#endif
 
                     break;
 
@@ -1479,8 +1591,12 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
                     right_loc = right.step_through(right_loc, lev - 1);
 
                     // Turn on data bit
+#if NODE_ELS == 4
+                    new_node |= 0x80 >> ((NODE_ELS - 1) - i);
+#else
                     node_data = (node_data << 1) | 0x1;
                     node_tree <<= 1;
+#endif
 
                     break;
 
@@ -1493,8 +1609,12 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
                     left_loc = left.step_through(left_loc, lev - 1);
 
                     // Turn on tree bit
+#if NODE_ELS == 4
+                    new_node |= 0x08 >> ((NODE_ELS - 1) - i);
+#else
                     node_data <<= 1;
                     node_tree = (node_tree << 1) | 0x1;
+#endif
 
                     break;
 
@@ -1507,8 +1627,12 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
                     right_loc = right.step_through(right_loc, lev - 1);
 
                     // Turn on tree bit
+#if NODE_ELS == 4
+                    new_node |= 0x08 >> ((NODE_ELS - 1) - i);
+#else
                     node_data <<= 1;
                     node_tree = (node_tree << 1) | 0x1;
+#endif
 
                     break;
 
@@ -1526,8 +1650,12 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
                     left_loc = left.step_through(left_loc, lev - 1);
 
                     // Turn on tree bit
+#if NODE_ELS == 4
+                    new_node |= 0x08 >> ((NODE_ELS - 1) - i);
+#else
                     node_data <<= 1;
                     node_tree = (node_tree << 1) | 0x1;
+#endif
 
                     break;
 
@@ -1545,8 +1673,12 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
                     right_loc = right.step_through(right_loc, lev - 1);
 
                     // Turn on tree bit
+#if NODE_ELS == 4
+                    new_node |= 0x08 >> ((NODE_ELS - 1) - i);
+#else
                     node_data <<= 1;
                     node_tree = (node_tree << 1) | 0x1;
+#endif
                     break;
 
                 default:
@@ -1562,8 +1694,14 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
         else if (!cur_left_tree_bit && !cur_right_tree_bit) {
 #endif
             // Shift in data bit
+#if NODE_ELS == 4
+            if (do_data_op(op, cur_left_data_bit, cur_right_data_bit) {
+                new_node |= 0x10 << i;
+            }
+#else
             node_data = (node_data << 1) | (halfnode_t) do_data_op(op, cur_left_data_bit, cur_right_data_bit);
             node_tree <<= 1;
+#endif
         }
 #ifndef USE_LITERAL
         else {
@@ -1573,12 +1711,41 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
     }
 
     // Write nodes
+#if NODE_ELS == 4
+    m_bzet[loc] = new_node;
+#else
     m_bzet[loc] = node_data;
     m_bzet[loc + 1] = node_tree;
+#endif
 
     // Set step
     set_step(loc, lev);
 
+#if NODE_ELS == 4
+    if (m_bzet[loc] == 0x00) {
+        // Nuild bzet manually if bzet is empty
+        if (m_nnodes == 1) {
+            clear();
+            return NORMAL;
+        }
+
+        resize(m_size - 1);
+        return EMPTY;
+    }
+    // Resulting node is saturated
+    else if (m_bzet[loc] == 0xF0) {
+        if (m_nnodes == 1) {
+            resize(2);
+            m_bzet[0]++;
+            m_bzet[1] = 0x80;
+            m_step[1] = 1;
+            return NORMAL;
+        }
+
+        resize(m_size - 1);
+        return SATURATED;
+    }
+#else
     // If resulting node is empty
     if (node_tree == 0 && node_data == 0) {
         // Drop newly committed node if not root node
@@ -1602,6 +1769,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
 
         return SATURATED;
     }
+#endif
 
     // TODO: See if collapsible to bit literal
 
