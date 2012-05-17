@@ -1733,6 +1733,25 @@ void BZET::align(BZET& b1, BZET& b2) {
     // If b2 needs to be grown
     if (b1.m_depth > b2.m_depth) {
         b2.m_depth = b1.m_depth;
+#if NODE_ELS == 4
+        size_t old_size = b2.m_nnodes;
+
+        // Resize b2 to accommodate new heading nodes
+        b2.resize(b2.m_nnodes + diffdepth);
+
+        // Move bzet and step in b2 to accommodate new heading nodes
+        memmove(b2.m_bzet + diffdepth, b2.m_bzet, old_size * sizeof(node_t));
+        memmove(b2.m_step + diffdepth, b2.m_step, old_size * sizeof(step_t));
+
+        // Add new nodes and new step
+        size_t loc = 0;
+        for (int i = 0; i < diffdepth; i++) {
+            b2.m_bzet[loc] = (node_t) ((node_t) 0x1 << (NODE_ELS - 1));
+            b2.set_step(loc, 1); // Cheat with this parameter since depth != 0
+
+            loc++;
+        }
+#else
         size_t old_size = b2.m_nhalfnodes;
 
         // Resize b2 to accommodate new heading nodes
@@ -1751,10 +1770,30 @@ void BZET::align(BZET& b1, BZET& b2) {
 
             loc += 2;
         }
+#endif
     }
     // Otherwise b1 needs to be grown
     else {
         b1.m_depth = b2.m_depth;
+#if NODE_ELS == 4
+        size_t old_size = b1.m_nnodes;
+
+        // Resize b1 to accommodate new heading nodes
+        b1.resize(b1.m_nnodes + diffDepth);
+
+        // Move bzet and step in b1 to accommodate new heading nodes
+        memmove(b1.m_bzet + diffdepth, b1.m_bzet, old_size * sizeof(node_t));
+        memmove(b1.m_step + diffdepth, b1.m_step, old_size * sizeof(step_t));
+
+        // Add new nodes and new step
+        size_t loc = 0;
+        for (int i = 0; i < diffdepth; i++) {
+            b1.m_bzet[loc] = (node_t) ((node_t) 0x1 << (NODE_ELS - 1));
+            b1.set_step(loc, 1); // Cheat with this parameter since depth != 0
+
+            loc++;
+        }
+#else
         size_t old_size = b1.m_nhalfnodes;
 
         // Resize b1 to accommodate new heading nodes
@@ -1773,6 +1812,7 @@ void BZET::align(BZET& b1, BZET& b2) {
 
             loc += 2;
         }
+#endif
     }
 }
 
@@ -1984,19 +2024,48 @@ void BZET::subtree_not(size_t loc, int depth) {
 
 // TODO: use popcount, add support for bit literal subtree
 int64_t BZET::_count(size_t loc, int depth) const {
+    if (empty())
+        return 0;
+
+    int64_t count = 0;
+
+#if NODE_ELS == 4
+    // Just return bit count with weight 1
+    if (depth == 1) {
+        node_t data = m_bzet[loc] >> NODE_ELS;
+#else
     // Just return bit count with weight 1
     if (depth == 0) {
         halfnode_t data = m_bzet[loc];
-        int64_t count = 0;
+#endif
         for (int i = 0; i < NODE_ELS; i++)
             count += ((data >> i) & 1);
         return count;
     }
 
+#if NODE_ELS == 4
+    // Handle all other levels
+    node_t data_node = m_bzet[loc] >> NODE_ELS;
+    node_t tree_node = m_bzet[loc] & 0xF;
+    for (int i = NODE_ELS - 1; i >= 0; i--) {
+        // TODO: Add handling for variable data literal
+        int data_bit = (data_node >> i) & 1;
+        int tree_bit = (tree_node >> i) & 1;
+
+        // If data bit set, add its weighted count to running count
+        if (data_bit) {
+            count += POW(depth);
+        }
+        // If tree bit set, recurse
+        else if (tree_bit) {
+            count += _count(loc + 1, depth - 1);
+            loc = step_through(loc + 1, depth - 1) - 1;
+        }
+    }
+#else
     // Handle all other levels
     halfnode_t data_node = m_bzet[loc];
     halfnode_t tree_node = m_bzet[loc + 1];
-    int64_t count = 0;
     for (int i = NODE_ELS - 1; i >= 0; i--) {
         // TODO: Add handling for variable data literal
         int data_bit = (data_node >> i) & 1;
@@ -2012,6 +2081,7 @@ int64_t BZET::_count(size_t loc, int depth) const {
             loc = step_through(loc + 2, depth - 1) - 2;
         }
     }
+#endif
 
     return count;
 }
