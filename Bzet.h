@@ -1828,26 +1828,48 @@ void BZET::normalize() {
 
 size_t BZET::step_through(size_t loc, int depth) const {
     // Make sure loc is in range
+#if NODE_ELS == 4
+    if (loc >= m_nnodes) {
+        printf("stepthrough fail trying %d, nnodes=%d\n", loc, m_nnodes);
+#else
     if (loc >= m_nhalfnodes) {
         printf("stepthrough fail trying %d, nhalf=%d\n", loc, m_nhalfnodes);
+#endif
         display_error("", true);
         //return -1;
     }
 
+#if NODE_ELS == 4
+    if (depth == 1)
+        return loc + 2;
+#else
     if (depth == 0)
         return loc + 1;
+#endif
 
     // Get step offset
+#if NODE_ELS == 4
+    size_t step_offset = m_step[loc];
+#else
     size_t step_offset = ((size_t) m_step[loc]) * STEP_T_MAX + (size_t) m_step[loc + 1];
+#endif
 
     // If the step offset is 0, the offset is too large to be actually stored
     // Compute it by examining the step of subtrees stemming from this node
     if (step_offset == 0) {
+#if NODE_ELS == 4
+        // Get node tree bits
+        node_t tree_bits = m_bzet[loc] & 0xF;
+
+        // Advance to location of first subtree node
+        loc++;
+#else
         // Get node tree bits
         halfnode_t tree_bits = m_bzet[loc + 1];
 
         // Advance to location of first subtree node
         loc += 2;
+#endif
 
         // Step through each subtree
         // TODO: Performance gain by using popcount
@@ -1863,6 +1885,54 @@ size_t BZET::step_through(size_t loc, int depth) const {
 }
 
 void BZET::subtree_not(size_t loc, int depth) {
+#if NODE_ELS == 4
+    if (loc == 0 || loc >= m_size)
+        return;
+
+    if (!depth)
+        depth = depthAt(loc);
+
+    // If no tree bits are on, just not the data bits
+    if (!(m_bzet[loc] & 0xF) && depth > 1) {
+        m_bzet[loc] = ~(m_bzet[loc] | 0xF);
+        return;
+    }
+
+    // If depth is 1, we just not this and the next node
+    if (depth == 1) {
+        m_bzet[loc] = ~m_bzet[loc];
+        m_bzet[loc + 1] = ~m_bzet[loc + 1];
+        return;
+    }
+
+    size_t nextLoc = loc + 1;
+
+    // Decrement depth
+    --depth;
+
+    for (int i = NODE_ELS - 1; i >= 0; --i) {
+        // If tree bit is on, recursively not each node
+        if ((m_bzet[loc] >> i) & 1) {
+            subtreeNot(nextLoc, depth);
+            nextLoc = stepThrough(nextLoc);
+        }
+    }
+
+    // Get the current byte
+    node_t c = m_bzet[loc]; 
+
+    // New data bits
+    node_t data_bits = (~(c >> NODE_ELS)) << NODE_ELS;
+
+    // Add tree bits
+    node_t newc = data_bits | (c & 0xF);
+
+    // Set up for dusting with tree bits priority
+    node_t tree_bits = c & 0xF;
+
+    // Dust using tree bits and write back
+    m_bzet[loc] = newc & (~(tree_bits << NODE_ELS) | tree_bits);
+#else
     // Check if loc is in range
     if (loc >= m_nhalfnodes) {
         printf("subtree_not: loc >= m_halfnodes %d %d\n", loc, m_nhalfnodes);
@@ -1909,6 +1979,7 @@ void BZET::subtree_not(size_t loc, int depth) {
             }
         }
     }
+#endif
 }
 
 // TODO: use popcount, add support for bit literal subtree
