@@ -2355,6 +2355,20 @@ NODETYPE BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int d
 
 // Implementation of at
 bool BZET::_at(BZET& b, size_t locb, BZET& right, size_t locright, int depth) {
+#if NODE_ELS == 4
+    // At depth 1, we are at the lowest level, check if the bit is set
+    if (depth == 1) {
+        if ((b.m_bzet[locb] & right.m_bzet[locright]) ||
+            (b.m_bzet[locb + 1] & right.m_bzet[locright]))
+            return true;
+        
+        return false;
+    }
+
+    node_t bdata_bits = b.m_bzet[locb] >> NODE_ELS;
+    node_t btree_bits = b.m_bzet[locb] & 0xF;
+    node_t righttree_bits = right.m_bzet[locright] & 0xF;
+#else
     // At depth 0, we are at the lowest level, check if the bit is set
     if (depth == 0) {
         if (b.m_bzet[locb] & right.m_bzet[locright])
@@ -2367,6 +2381,7 @@ bool BZET::_at(BZET& b, size_t locb, BZET& right, size_t locright, int depth) {
     halfnode_t& btree_bits = b.m_bzet[locb + 1];
     //halfnode_t& rightdata_bits = right.m_bzet[locright];
     halfnode_t& righttree_bits = right.m_bzet[locright + 1];
+#endif
 
     // Data bit higher up is set, we're done. Bit found.
     if (bdata_bits & righttree_bits) {
@@ -2375,7 +2390,11 @@ bool BZET::_at(BZET& b, size_t locb, BZET& right, size_t locright, int depth) {
     // Same tree bit is set, recurse
     else if (btree_bits & righttree_bits) {
         // Skip all subtrees in b before the subtree we want
+#if NODE_ELS == 4
+        locb++;
+#else
         locb += 2;
+#endif
         for (int i = NODE_ELS - 1; i >= 0; i--)
             if ((btree_bits >> i) & (righttree_bits >> i)) {
                 break;
@@ -2385,7 +2404,11 @@ bool BZET::_at(BZET& b, size_t locb, BZET& right, size_t locright, int depth) {
             }
 
         // Recurse
+#if NODE_ELS == 4
+        return _at(b, locb, right, locright + 1, depth - 1);
+#else
         return _at(b, locb, right, locright + 2, depth - 1);
+#endif
     }
     // Tree bit is not on, so bit is not set.
     else {
