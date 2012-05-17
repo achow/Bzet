@@ -243,7 +243,7 @@ void BZET::init(size_t initial_alloc) {
     m_depth = 0;
 #if NODE_ELS == 4
     m_nnodes = 0;
-    m_nbufhalfnodes = INITIAL_ALLOC;
+    m_nbufnodes = INITIAL_ALLOC;
 #else
     m_nhalfnodes = 0;
     m_nbufhalfnodes = INITIAL_ALLOC;
@@ -368,7 +368,7 @@ void BZET::set_step(size_t loc, int depth) {
     if (locdiff >= STEP_T_MAX)
         m_step[loc] = 0;
     else
-        m_step[loc] = locdiff;
+        m_step[loc] = (step_t) locdiff;
 #else
     if (depth == 0) {
         m_step[loc] = 1;
@@ -461,8 +461,8 @@ BZET::BZET(int64_t bit) {
     // Set m_step
     // No need to check m_size <= 255 to make sure m_step values doesn't overflow
     // Since it would never happen (4^255 ~ 10^153)
-    for (int i = 0; i < m_size; ++i)
-        m_step[i] = (step_t) (m_size - i);
+    for (int i = 0; i < m_nnodes; ++i)
+        m_step[i] = (step_t) (m_nnodes - i);
 #else
     // Build depth
     int depth = 0;
@@ -524,12 +524,12 @@ BZET::BZET(const BZET& b) {
     m_nnodes = b.m_nnodes;
 
     // Deep copy of bzet and step
-    m_bzet = (node_t *) malloc(m_nbufhalfnodes * sizeof(node_t));
+    m_bzet = (node_t *) malloc(m_nbufnodes * sizeof(node_t));
     if (!m_bzet) {
         display_error("copy malloc failed\n", true);
     }
 
-    m_step = (step_t *) malloc(m_nbufhalfnodes * sizeof(step_t));
+    m_step = (step_t *) malloc(m_nbufnodes * sizeof(step_t));
     if (!m_step) {
         display_error("copy malloc failed\n", true);
         free(m_bzet);
@@ -605,10 +605,10 @@ BZET BZET::operator~() const {
 // Bitwise OR
 BZET BZET::operator|(BZET& right) {
     // If left bzet is empty, the bitwise OR will be equal to the right bzet
-    if (m_nhalfnodes == 0)
+    if (empty())
         return BZET(right);
     // If right bzet is empty, the bitwise OR will be equal to the left bzet
-    else if (right.m_nhalfnodes == 0)
+    else if (right.empty())
         return BZET(*this);
     // Otherwise just operate on them
     else {
@@ -790,7 +790,7 @@ int64_t BZET::firstBit() const {
             c = m_bzet[loc + 1];
             for (int i = 7; i >= 0; i--)
                 if ((c >> i) & 1)
-                    return bitBase + 15 - i;
+                    return bit + 15 - i;
         }
 
         // Calculation for all other nodes
@@ -802,12 +802,12 @@ int64_t BZET::firstBit() const {
             // Check data bit
             // If on, return the lowest bit
             if ((data_bits >> i) & 1)
-                return bitBase + (NODE_ELS - 1 - i) * pow4(level);
+                return bit + (NODE_ELS - 1 - i) * pow4(level);
 
             // Check tree bit
             if ((tree_bits >> i) & 1) {
                 // If on, advance bitBase to the correct prefix and check that node
-                bitBase += (NODE_ELS - 1 - i) * pow4(level);
+                bit += (NODE_ELS - 1 - i) * pow4(level);
                 break;
             }
         }
@@ -861,6 +861,7 @@ int64_t BZET::lastBit() const {
         return -1;
 
 #if NODE_ELS == 4
+    // TODO: Fix lastBit() for Bzet4
     size_t loc = 0; 
     int level = m_depth; 
     int64_t bit = 0;
@@ -874,13 +875,13 @@ int64_t BZET::lastBit() const {
             if (c)
                 for (int i = 0; i < 8; ++i)
                     if ((c >> i) & 1)
-                        return bitBase + 15 - i;
+                        return bit + 15 - i;
 
             // If no data bit set in last 2 nodes, check first 2
             c = m_bzet[loc];
             for (int i = 0; i < 8; ++i)
                 if ((c >> i) & 1)
-                    return bitBase + 7 - i;
+                    return bit + 7 - i;
         }
 
         node_t c = m_bzet[loc];
@@ -900,7 +901,7 @@ int64_t BZET::lastBit() const {
         // If this node has the farthest data bit set
         // If so, last bit found
         if (last_data_bit > last_tree_bit) {
-            return bitBase + (last_data_bit + 1) * pow4(level) - 1;
+            return bit + (last_data_bit + 1) * pow4(level) - 1;
         }
 
         // If no tree bits are on, we're at the end
@@ -911,7 +912,7 @@ int64_t BZET::lastBit() const {
                 if ((data_bits >> i) & 1)
                     last_data_bit = NODE_ELS - 1 - i;
 
-            return bitBase + (last_data_bit + 1) * pow4(level) - 1;
+            return bit + (last_data_bit + 1) * pow4(level) - 1;
         }
 
         // Otherwise step through the nodes until you get to the node
@@ -919,14 +920,14 @@ int64_t BZET::lastBit() const {
         ++loc;
         for (int i = NODE_ELS - 1; i > NODE_ELS - 1 - last_tree_bit; i--) 
             if ((tree_bits >> i) & 1) 
-                loc = stepThrough(loc);
+                loc = step_through(loc, level - 1);
 
-        bitBase += last_tree_bit * pow4(level);
+        bit += last_tree_bit * pow4(level);
 
         // Loc now points to location of the node corresponding to the last
         // tree bit, so repeat this process
         level--;
-    } while (loc < m_size);
+    } while (loc < m_nnodes);
 #else
     int64_t bit = 0;
     int depth = m_depth;
@@ -1323,7 +1324,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
         c_right = right.m_bzet[right_loc + 1];
 
         // Build data nodes 2 and 3
-        node_t char result_c2 = 0x00;
+        node_t result_c2 = 0x00;
         for (int i = 7; i >= 0; --i) {
             int bita = (c_left >> i) & 1;
             int bitb = (c_right >> i) & 1;
@@ -1354,9 +1355,11 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
             return EMPTY;
         }
 
+        size_t loc = m_nnodes;
+
         // Otherwise commit data
         // Create two nodes to accommodate data nodes
-        resize(m_size + 2);
+        resize(m_nnodes + 2);
 
         // Write result
         m_bzet[loc] = result_c1;
@@ -1475,7 +1478,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
                 if (cn == SATURATED) {
                     // Turn on data bit
 #if NODE_ELS == 4
-                    new_nodes |= 0x10 << i;
+                    new_node |= 0x10 << i;
 #else
                     node_data = (node_data << 1) | 0x1;
                     node_tree <<= 1;
@@ -1494,18 +1497,20 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
                 // "Tree" subtree
                 else if (cn == NORMAL) {
                     // Turn on tree bit
-                    node_data <<= 1;
-                    node_tree = (node_tree << 1) | 0x1;
-                }
-                // Otherwise data literal subtree
-                else {
 #if NODE_ELS == 4
                     // Subtree exists, turn on tree bit
                     new_node |= 0x01 << i;
 #else
-                    // TODO: Handle data literal subtree
+                    node_data <<= 1;
+                    node_tree = (node_tree << 1) | 0x1;
 #endif
                 }
+#ifdef USE_LITERAL
+                // Otherwise data literal subtree
+                else {
+                    // TODO: Handle data literal subtree
+                }
+#endif
 
                 // Advance location pointers
                 left_loc = left.step_through(left_loc, lev - 1);
@@ -1638,7 +1643,11 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
 
                 // Copy left subtree into result and negate
                 case NA:
+#if NODE_ELS == 4
+                    end = m_nnodes;
+#else
                     end = m_nhalfnodes;
+#endif
 
                     // Append left subtree
                     append_subtree(left, left_loc, lev - 1);
@@ -1661,7 +1670,11 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
 
                 // Copy right subtree into result and negate
                 case NB:
+#if NODE_ELS == 4
+                    end = m_nnodes;
+#else
                     end = m_nhalfnodes;
+#endif
 
                     // Append right subtree
                     append_subtree(right, right_loc, lev - 1);
@@ -1695,7 +1708,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
 #endif
             // Shift in data bit
 #if NODE_ELS == 4
-            if (do_data_op(op, cur_left_data_bit, cur_right_data_bit) {
+            if (do_data_op(op, cur_left_data_bit, cur_right_data_bit)) {
                 new_node |= 0x10 << i;
             }
 #else
@@ -1729,7 +1742,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
             return NORMAL;
         }
 
-        resize(m_size - 1);
+        resize(m_nnodes - 1);
         return EMPTY;
     }
     // Resulting node is saturated
@@ -1742,7 +1755,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
             return NORMAL;
         }
 
-        resize(m_size - 1);
+        resize(m_nnodes - 1);
         return SATURATED;
     }
 #else
@@ -1822,11 +1835,11 @@ void BZET::_printBzet(int stdOffset, FILE* target, int depth, size_t loc, int of
             if ((tree_bits >> i) & 0x1) {
                 // Print first node without offset
                 if (firstNode) {
-                    _printBzet(stdOffset, target, loc + 1, depth, offset + 1);
+                    _printBzet(stdOffset, target, depth, loc + 1, offset + 1);
                     firstNode = false;
                 } else {
-                    _printBzet(stdOffset, target, stepThrough(loc + 1), depth, offset + 1, true);
-                    loc = stepThrough(loc + 1) - 1;
+                    _printBzet(stdOffset, target, depth, step_through(loc + 1, depth), offset + 1, true);
+                    loc = step_through(loc + 1, depth) - 1;
                 }
             }
         }
@@ -1947,7 +1960,7 @@ void BZET::align(BZET& b1, BZET& b2) {
         size_t old_size = b1.m_nnodes;
 
         // Resize b1 to accommodate new heading nodes
-        b1.resize(b1.m_nnodes + diffDepth);
+        b1.resize(b1.m_nnodes + diffdepth);
 
         // Move bzet and step in b1 to accommodate new heading nodes
         memmove(b1.m_bzet + diffdepth, b1.m_bzet, old_size * sizeof(node_t));
@@ -2094,11 +2107,8 @@ size_t BZET::step_through(size_t loc, int depth) const {
 
 void BZET::subtree_not(size_t loc, int depth) {
 #if NODE_ELS == 4
-    if (loc == 0 || loc >= m_size)
+    if (loc >= m_nnodes)
         return;
-
-    if (!depth)
-        depth = depthAt(loc);
 
     // If no tree bits are on, just not the data bits
     if (!(m_bzet[loc] & 0xF) && depth > 1) {
@@ -2121,8 +2131,8 @@ void BZET::subtree_not(size_t loc, int depth) {
     for (int i = NODE_ELS - 1; i >= 0; --i) {
         // If tree bit is on, recursively not each node
         if ((m_bzet[loc] >> i) & 1) {
-            subtreeNot(nextLoc, depth);
-            nextLoc = stepThrough(nextLoc);
+            subtree_not(nextLoc, depth);
+            nextLoc = step_through(nextLoc, depth - 1);
         }
     }
 
