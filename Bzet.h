@@ -2528,10 +2528,10 @@ size_t BZET::build_step(size_t loc, int depth) {
     }
 
 #if NODE_ELS == 4
-    if (m_step[curloc] >= STEP_T_MAX)
+    if (step >= STEP_T_MAX)
         m_step[curloc] = 0;
     else
-        m_step[curloc] = (step_t) STEP_T_MAX;
+        m_step[curloc] = (step_t) step;
 #else
     m_step[curloc] = (step_t) (step / STEP_T_MAX);
     m_step[curloc + 1] = (step_t) (step % STEP_T_MAX);
