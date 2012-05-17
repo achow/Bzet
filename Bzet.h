@@ -156,15 +156,19 @@ class BZET {
         int64_t getBits(int64_t* bits, int64_t limit = 0, int64_t start = 0);
 		bool empty() const;
 
-        /*void printStep() {
+        void printStep() {
+#if NODE_ELS == 4
+            for (size_t i = 0; i < m_nnodes; i++) {
+#else
             for (size_t i = 0; i < m_nhalfnodes; i++) {
+#endif
                 if ((i % 10) == 0)
                     printf("\n");
                 printf("0x%.*X ", sizeof(step_t) * 2, (step_t) m_step[i]);
                 //printf("%d ", m_step[i]);
             }
             printf("\n");
-        }*/
+        }
 
     private:
 #ifdef USE_LITERAL
@@ -446,7 +450,7 @@ BZET::BZET(int64_t bit) {
     // Set bits containing level 0 nodes 0 and 1 (bits 0-7)
     m_bzet[depth - 1] = (node_t) 0x80 >> (bit & 0xF);
     // Set bits containing level 0 nodes 2 and 3 (bits 8-15) if previous node not set
-    m_bzet[depth] = (m_bzet[depth]) ? 0x00 : (node_t) 0x80 >> (bit & 0x7);
+    m_bzet[depth] = (m_bzet[depth - 1]) ? 0x00 : (node_t) 0x80 >> (bit & 0x7);
 
     // Since level 1 set, divide by 16 to see if tree nodes needed
     bit >>= 4; 
@@ -1928,7 +1932,7 @@ void BZET::align(BZET& b1, BZET& b2) {
         size_t loc = 0;
         for (int i = 0; i < diffdepth; i++) {
             b2.m_bzet[loc] = (node_t) ((node_t) 0x1 << (NODE_ELS - 1));
-            b2.set_step(loc, 1); // Cheat with this parameter since depth != 0
+            b2.set_step(loc, 2); // Cheat with this parameter since depth != 1
 
             loc++;
         }
@@ -1945,9 +1949,8 @@ void BZET::align(BZET& b1, BZET& b2) {
         // Add new nodes and new step
         size_t loc = 0;
         for (int i = 0; i < diffdepth; i++) {
-            b2.m_bzet[loc] = 0;
-            b2.m_bzet[loc + 1] = (halfnode_t) ((halfnode_t) 0x1 << (NODE_ELS - 1));
-            b2.set_step(loc, 1); // Cheat with this parameter since depth != 0
+            b2.m_bzet[loc] = 0x80;
+            b2.set_step(loc, 2); // Cheat with this parameter since depth != 0
 
             loc += 2;
         }
@@ -1970,7 +1973,7 @@ void BZET::align(BZET& b1, BZET& b2) {
         size_t loc = 0;
         for (int i = 0; i < diffdepth; i++) {
             b1.m_bzet[loc] = (node_t) ((node_t) 0x1 << (NODE_ELS - 1));
-            b1.set_step(loc, 1); // Cheat with this parameter since depth != 0
+            b1.set_step(loc, 2); // Cheat with this parameter since depth != 1
 
             loc++;
         }
@@ -1989,7 +1992,7 @@ void BZET::align(BZET& b1, BZET& b2) {
         for (int i = 0; i < diffdepth; i++) {
             b1.m_bzet[loc] = 0;
             b1.m_bzet[loc + 1] = (halfnode_t) ((halfnode_t) 0x1 << (NODE_ELS - 1));
-            b1.set_step(loc, 1); // Cheat with this paramter since depth != 0
+            b1.set_step(loc, 2); // Cheat with this paramter since depth != 0
 
             loc += 2;
         }
@@ -2210,14 +2213,21 @@ int64_t BZET::_count(size_t loc, int depth) const {
 #if NODE_ELS == 4
     // Just return bit count with weight 1
     if (depth == 1) {
-        node_t data = m_bzet[loc] >> NODE_ELS;
+        node_t data = m_bzet[loc];
+        for (int i = 0; i < 8; i++)
+            count += ((data >> i) & 1);
+
+        data = m_bzet[loc + 1];
+        for (int i = 0; i < 8; i++)
+            count += ((data >> i) & 1);
 #else
     // Just return bit count with weight 1
     if (depth == 0) {
         halfnode_t data = m_bzet[loc];
-#endif
         for (int i = 0; i < NODE_ELS; i++)
             count += ((data >> i) & 1);
+#endif
+
         return count;
     }
 
@@ -2389,7 +2399,7 @@ NODETYPE BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int d
 
         // Update step
         // Cheat with depth since depth != 0
-        b.set_step(loc, 1);        
+        b.set_step(loc, 2);        
         return NORMAL;
     }
     // Tree bit is not on, set tree bit and append the subtree
@@ -2418,7 +2428,7 @@ bool BZET::_at(BZET& b, size_t locb, BZET& right, size_t locright, int depth) {
     // At depth 1, we are at the lowest level, check if the bit is set
     if (depth == 1) {
         if ((b.m_bzet[locb] & right.m_bzet[locright]) ||
-            (b.m_bzet[locb + 1] & right.m_bzet[locright]))
+            (b.m_bzet[locb + 1] & right.m_bzet[locright + 1]))
             return true;
         
         return false;
