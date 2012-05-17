@@ -69,11 +69,13 @@ size_t const PASTE(powersof, NODE_ELS)[NPOWERS] =
 #error "Invalid NODE_ELS provided"
 #endif
 
-#if STEP_BYTES == 2
-typedef unsigned short step_t;
+#if (STEP_BYTES == 4 && NODE_ELS == 4)
+typedef uint32_t step_t;
+#elif STEP_BYTES == 2
+typedef uint16_t step_t;
 #else
 #define STEP_BYTES 1
-typedef unsigned char step_t;
+typedef uint8_t step_t;
 #endif
 
 #define STEP_T_MAX ((size_t) 1 << (STEP_BYTES * 8))
@@ -2285,7 +2287,7 @@ NODETYPE BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int d
 #endif
         b.m_bzet[locb] |= right.m_bzet[locright];
 #if NODE_ELS == 4
-        b.m_bzet[locb + 1] |= right.m_bzet[locright];
+        b.m_bzet[locb + 1] |= right.m_bzet[locright + 1];
         // If node is saturated, drop these node and signal it was dropped
         if (b.m_bzet[locb] == 0xFF && b.m_bzet[locb + 1] == 0xFF) {
             // If these are the only nodes
@@ -2418,7 +2420,7 @@ NODETYPE BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int d
 #endif
         // Update step
         // Cheat with depth since depth != 0
-        b.set_step(locb, 1);
+        b.set_step(locb, 2);
         return NORMAL;
     }
 }
