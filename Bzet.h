@@ -69,13 +69,18 @@ size_t const PASTE(powersof, NODE_ELS)[NPOWERS] =
 #error "Invalid NODE_ELS provided"
 #endif
 
+#ifndef STEP_BYTES
+#define STEP_BYTES 1
+#endif
+
 #if (STEP_BYTES == 4 && NODE_ELS == 4)
 typedef uint32_t step_t;
 #elif STEP_BYTES == 2
 typedef uint16_t step_t;
-#else
-#define STEP_BYTES 1
+#elif STEP_BYTES == 1
 typedef uint8_t step_t;
+#else
+#error "Invalid STEP_BYTES provided"
 #endif
 
 #define STEP_T_MAX ((size_t) 1 << (STEP_BYTES * 8))
