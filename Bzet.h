@@ -770,7 +770,29 @@ void BZET::unset(int64_t bit) {
     BZET nb = BZET(bit);
     align(*this, nb);
     nb = ~nb;
-    *this = *this & nb;
+
+    BZET result;
+
+    // Operate
+    result._binop(*this, nb, OP_AND, m_depth);
+
+    // Normalize
+    result.normalize();
+
+    // Shallow copy result to *this
+#if NODE_ELS == 4
+    m_nnodes = result.m_nnodes;
+    m_nbufnodes = result.m_nbufnodes;
+#else
+    m_nhalfnodes = result.m_nhalfnodes;
+    m_nbufhalfnodes = result.m_nbufhalfnodes;
+#endif
+    free(m_bzet);
+    free(m_step);
+    m_bzet = result.m_bzet;
+    m_step = result.m_step;
+    result.m_bzet = NULL;
+    result.m_step = NULL;
 }
 
 // Get the first bit set
