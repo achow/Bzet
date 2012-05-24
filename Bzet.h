@@ -1,10 +1,24 @@
 /*****************************************************************************
- * Generic code for Bzet8/Bzet16/Bzet32/Bzet64
+ * Generic code for Bzet4/Bzet8/Bzet16/Bzet32/Bzet64
  *
  * Things to do:
  *  - Good error messages, better error handling in general (?)
  *  - Performance can be improved by using popcount compiler intrinsics
  *    instead of manually counting bits
+ *
+ * Defines:
+ *
+ *  NODE_ELS    The flavor of Bzet you want to use (e.g. to use Bzet8, define
+ *              NODE_ELS=8 prior to including Bzet.h), default is 8.
+ *
+ *  STEP_BYTES  The number of bytes you would like to allocate to the auxiliary
+ *              step array. For Bzet8+, STEP_BYTES can be either 1 or 2. For
+ *              Bzet4, STEP_BYTES can also be 4. Default is 4 for Bzet4 and
+ *              2 otherwise. For best performance, use defaults. Change this if
+ *              memory is an issue.
+ *
+ *  BZET_IMPL_  Define this to also include the implementation. If not defined,
+ *              this is only a header file.
  *
  * Author: Alex Chow
  *****************************************************************************/
@@ -70,7 +84,11 @@ size_t const PASTE(powersof, NODE_ELS)[NPOWERS] =
 #endif
 
 #ifndef STEP_BYTES
-#define STEP_BYTES 1
+#if NODE_ELS == 4
+#define STEP_BYTES 4
+#else
+#define STEP_BYTES 2
+#endif
 #endif
 
 #if (STEP_BYTES == 4 && NODE_ELS == 4)
