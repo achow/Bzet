@@ -75,7 +75,7 @@ void gen(vector<unsigned int>& result, unsigned int nbits, unsigned int space) {
 void show_raw(BZET& b) {
     uint8_t *raw = new uint8_t[b.size()];
     b.hex(raw);
-    for (int i = 0; i < b.size(); i++) {
+    for (unsigned int i = 0; i < b.size(); i++) {
         printf("0x%x ", raw[i]);
     }
     printf("\n");
@@ -85,7 +85,7 @@ void show_raw(BZET& b) {
 int main() {
     //cout << "START\n";
     //freopen ("correctnesstest.txt", "w", stdout);
-    int density, r;
+    int density;
     int64_t *bits;
 
     for (int i = 0; i < NTESTS; i++) {

@@ -32,7 +32,6 @@
 #include <string.h>
 #include <stdint.h>
 #include <assert.h>
-#include <execinfo.h>
 
 #ifndef NODE_ELS
 #define NODE_ELS 8
@@ -246,10 +245,6 @@ inline
 void BZET::display_error(const char* message, bool fatal, FILE* output) {
     fprintf(output, "%s\n", message);
     if (fatal) {
-        fprintf(output, "Stack trace:\n");
-        void *array[64];
-        size_t size = 64;
-        backtrace_symbols_fd(array, size, 2);
         exit(1);
     }
 }
@@ -2217,7 +2212,7 @@ void BZET::subtree_not(size_t loc, int depth) {
 #else
     // Check if loc is in range
     if (loc >= m_nhalfnodes) {
-        printf("subtree_not: loc >= m_halfnodes %d %d\n", loc, m_nhalfnodes);
+        printf("subtree_not: loc >= m_halfnodes %zd %zd\n", loc, m_nhalfnodes);
         exit(1);
         return;
     }
