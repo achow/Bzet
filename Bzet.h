@@ -32,6 +32,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <assert.h>
+#include <execinfo.h>
 
 #ifndef NODE_ELS
 #define NODE_ELS 8
@@ -189,7 +190,7 @@ class BZET {
 #endif
                 if ((i % 10) == 0)
                     printf("\n");
-                printf("0x%.*X ", sizeof(step_t) * 2, (step_t) m_step[i]);
+                printf("0x%.*X ", (unsigned int) sizeof(step_t) * 2, (step_t) m_step[i]);
                 //printf("%d ", m_step[i]);
             }
             printf("\n");
@@ -244,8 +245,13 @@ class BZET {
 inline
 void BZET::display_error(const char* message, bool fatal, FILE* output) {
     fprintf(output, "%s\n", message);
-    if (fatal)
+    if (fatal) {
+        fprintf(output, "Stack trace:\n");
+        void *array[64];
+        size_t size = 64;
+        backtrace_symbols_fd(array, size, 2);
         exit(1);
+    }
 }
 
 // Common Bzet constructor initialization
@@ -298,7 +304,7 @@ void BZET::resize(size_t nnodes) {
         // Check that realloc succeeded
         // TODO: Replace with better checking above
         if (!m_bzet || !m_step) {
-            fprintf(stderr, "Fatal error: Resizing bzet failed attempting to allocate %l bytes\n", m_nbufnodes * sizeof(node_t));
+            fprintf(stderr, "Fatal error: Resizing bzet failed attempting to allocate %zu bytes\n", m_nbufnodes * sizeof(node_t));
             display_error("", true);
         }
 
@@ -326,7 +332,7 @@ void BZET::resize(size_t nhalfnodes) {
         // Check that realloc succeeded
         // TODO: Replace with better checking above
         if (!m_bzet || !m_step) {
-            fprintf(stderr, "Fatal error: Resizing bzet failed attempting to allocate %l bytes\n", m_nbufhalfnodes * sizeof(halfnode_t));
+            fprintf(stderr, "Fatal error: Resizing bzet failed attempting to allocate %zu bytes\n", (m_nbufhalfnodes * sizeof(halfnode_t)));
             display_error("", true);
         }
 
@@ -490,7 +496,7 @@ BZET::BZET(int64_t bit) {
     // Set m_step
     // No need to check m_size <= 255 to make sure m_step values doesn't overflow
     // Since it would never happen (4^255 ~ 10^153)
-    for (int i = 0; i < m_nnodes; ++i)
+    for (unsigned int i = 0; i < m_nnodes; ++i)
         m_step[i] = (step_t) (m_nnodes - i);
 #else
     // Build depth
@@ -526,7 +532,7 @@ BZET::BZET(int64_t bit) {
     // Set b->step
     // No need to check b->size <= 255 to make sure b->step values doesn't
     // overflow since it would never happen (4^255 ~ 10^153)
-    for (int i = 0; i < m_nhalfnodes; i += 2) {
+    for (unsigned int i = 0; i < m_nhalfnodes; i += 2) {
         m_step[i] = 0;
         m_step[i + 1] = (step_t) (m_nhalfnodes - i);
     }
@@ -747,6 +753,8 @@ void BZET::set(int64_t bit) {
     // Align both bzets
     align(*this, temp);
 
+    result.m_depth = m_depth;
+
     // Operate
     result._binop(*this, temp, OP_OR, m_depth);
 
@@ -757,9 +765,11 @@ void BZET::set(int64_t bit) {
 #if NODE_ELS == 4
     m_nnodes = result.m_nnodes;
     m_nbufnodes = result.m_nbufnodes;
+    m_depth = result.m_depth;
 #else
     m_nhalfnodes = result.m_nhalfnodes;
     m_nbufhalfnodes = result.m_nbufhalfnodes;
+    m_depth = result.m_depth;
 #endif
     free(m_bzet);
     free(m_step);
@@ -918,7 +928,7 @@ int64_t BZET::lastBit() const {
     int64_t bit = 0;
 
     do {
-        // Cpecial calculation at level 1
+        // Special calculation at level 1
         if (level == 1) {
             // Check data nodes 2 and 3
             node_t c = m_bzet[loc + 1];
@@ -939,7 +949,7 @@ int64_t BZET::lastBit() const {
         node_t data_bits = (c >> NODE_ELS) & 0xF;
         node_t tree_bits = c & 0xF;
 
-        //get last tree and data bit
+        // Get last tree and data bit
         int last_tree_bit = 0;
         int last_data_bit = 0;
         for (int i = NODE_ELS - 1; i >= 0; i--) {
@@ -1026,6 +1036,9 @@ int64_t BZET::lastBit() const {
         loc += 2;
     }
 #endif
+
+    // We shouldn't get here.
+    return -2;
 }
 
 // Count the number of bits set
@@ -1043,9 +1056,9 @@ int BZET::depth() const {
 // Get size of bzet
 size_t BZET::size() const {
 #if NODE_ELS == 4
-    return (m_nnodes + 1);
+    return m_nnodes + 1;
 #else
-    return (m_nhalfnodes * sizeof(halfnode_t) + 1);
+    return m_nhalfnodes * sizeof(halfnode_t) + 1;
 #endif
 }
 
@@ -1384,13 +1397,14 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
 
         // Saturated node
         if (result_c1 == 0xFF && result_c2 == 0xFF) {
-            // Build bzet manually if bzet is saturated
+            // Build bzet manually if bzet is empty 
+            // Note that this implicitly tests if m_depth == 1
             if (empty()) {
-                resize(2);
-                m_bzet[0]++;
-                m_bzet[1] = 0x80;
-                m_step[1] = 1;
-                return NORMAL;
+                resize(1);
+                m_depth = 2;
+                m_bzet[0] = 0x80;
+                m_step[0] = 1;
+                //return EMPTY;
             }
 
             return SATURATED;
@@ -1398,6 +1412,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
         // Empty node
         else if (!result_c1 && !result_c2) {
             // Build bzet manually if bzet is empty
+            // Note that this implicitly tests if m_depth == 1
             if (empty()) {
                 clear();
                 return NORMAL;
@@ -1416,9 +1431,9 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
         m_bzet[loc] = result_c1;
         m_bzet[loc + 1] = result_c2;
 
-        /*// Set steps
+        // Set steps
         m_step[loc] = 2;
-        m_step[loc + 1] = 1;*/
+        m_step[loc + 1] = 1;
         
         return NORMAL;
     }
@@ -1799,10 +1814,10 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
     // Resulting node is saturated
     else if (m_bzet[loc] == 0xF0) {
         if (m_nnodes == 1) {
-            resize(2);
-            m_bzet[0]++;
-            m_bzet[1] = 0x80;
-            m_step[1] = 1;
+            resize(1);
+            m_depth++;
+            m_bzet[0] = 0x80;
+            m_step[0] = 1;
             return NORMAL;
         }
 
@@ -2050,11 +2065,12 @@ void BZET::align(BZET& b1, BZET& b2) {
 
 void BZET::normalize() {
 #if NODE_ELS == 4
-    //no need to normalize bzet with only 1 level
-    if (m_bzet[0] == 0x01)
+    // No need to normalize bzet with only 1 node 
+    if (m_nnodes == 1) {
         return;
+    }
 
-    //count leading 0x08 nodes
+    // Count leading 0x08 nodes
     int leading = 0;
     while (m_bzet[leading] == 0x08)
         leading++;
@@ -2102,10 +2118,10 @@ size_t BZET::step_through(size_t loc, int depth) const {
     // Make sure loc is in range
 #if NODE_ELS == 4
     if (loc >= m_nnodes) {
-        printf("stepthrough fail trying %d, nnodes=%d\n", loc, m_nnodes);
+        printf("stepthrough fail trying %zu, nnodes=%zu\n", loc, m_nnodes);
 #else
     if (loc >= m_nhalfnodes) {
-        printf("stepthrough fail trying %d, nhalf=%d\n", loc, m_nhalfnodes);
+        printf("stepthrough fail trying %zu, nhalf=%zu\n", loc, m_nhalfnodes);
 #endif
         display_error("", true);
         //return -1;
@@ -2183,7 +2199,7 @@ void BZET::subtree_not(size_t loc, int depth) {
         // If tree bit is on, recursively not each node
         if ((m_bzet[loc] >> i) & 1) {
             subtree_not(nextLoc, depth);
-            nextLoc = step_through(nextLoc, depth - 1);
+            nextLoc = step_through(nextLoc, depth);
         }
     }
 
@@ -2191,16 +2207,13 @@ void BZET::subtree_not(size_t loc, int depth) {
     node_t c = m_bzet[loc]; 
 
     // New data bits
-    node_t data_bits = (~(c >> NODE_ELS)) << NODE_ELS;
-
-    // Add tree bits
-    node_t newc = data_bits | (c & 0xF);
+    node_t data_bits = ~(c >> NODE_ELS);
 
     // Set up for dusting with tree bits priority
     node_t tree_bits = c & 0xF;
 
     // Dust using tree bits and write back
-    m_bzet[loc] = newc & (~(tree_bits << NODE_ELS) | tree_bits);
+    m_bzet[loc] = ((data_bits & ~tree_bits) << NODE_ELS) | tree_bits;
 #else
     // Check if loc is in range
     if (loc >= m_nhalfnodes) {
