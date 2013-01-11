@@ -118,25 +118,25 @@ enum NODETYPE { SATURATED, EMPTY, NORMAL, LITERAL };
 enum NODETYPE { SATURATED, EMPTY, NORMAL };
 #endif
 
-static const ACTION optable[64] = {       
-        DB0, DA0, DB0, DA0 , //00 0000 FALSE   Result
-        DB0, DA0, CB,  CA  , //01 0001 AND        |
-        CB,  CA,  NB,  DA0 , //02 0010 A<-B       |
-        DB0, CA,  DB0, CA  , //03 0011 A          V
-        DB0, DA0, DB0, CA  , //04 0100 ????
-        CB,  DA0, CB,  DA0 , //05 0101 B
-        CB,  CA,  NB,  NA  , //06 0110 XOR
-        CB,  CA,  DB1, DA1 , //07 0111 OR
-        NB,  NA,  DB0, DA0 , //08 1000 NOR
-        NB,  NA,  CB,  CA  , //09 1001 EQ
-        NB,  DA0, NB,  DA0 , //10 1010 ~B
-        CB,  CA,  CB,  CA  , //11 1011 ????
-        DB0, NA,  DB0, NA  , //12 1100 ~A
-        DB0, NA,  CB,  CA  , //13 1101 A->B
-        DB1, DA1, NB,  NA  , //14 1110 NAND
-        DB1, DA1, DB1, DA1 }; //15 1111 TRUE
-     // 0T   T0   1T   T1 
-     // 0    1    2    3   
+static const ACTION optable[16][4] = {       
+        { DB0, DA0, DB0, DA0 }, //00 0000 FALSE   Result
+        { DB0, DA0, CB,  CA  }, //01 0001 AND        |
+        { CB,  CA,  NB,  DA0 }, //02 0010 A<-B       |
+        { DB0, CA,  DB0, CA  }, //03 0011 A          V
+        { DB0, DA0, DB0, CA  }, //04 0100 ????
+        { CB,  DA0, CB,  DA0 }, //05 0101 B
+        { CB,  CA,  NB,  NA  }, //06 0110 XOR
+        { CB,  CA,  DB1, DA1 }, //07 0111 OR
+        { NB,  NA,  DB0, DA0 }, //08 1000 NOR
+        { NB,  NA,  CB,  CA  }, //09 1001 EQ
+        { NB,  DA0, NB,  DA0 }, //10 1010 ~B
+        { CB,  CA,  CB,  CA  }, //11 1011 ????
+        { DB0, NA,  DB0, NA  }, //12 1100 ~A
+        { DB0, NA,  CB,  CA  }, //13 1101 A->B
+        { DB1, DA1, NB,  NA  }, //14 1110 NAND
+        { DB1, DA1, DB1, DA1 } }; //15 1111 TRUE
+       // 0T   T0   1T   T1 
+       // 0    1    2    3   
 
 // Bzet class
 class BZET {
@@ -799,9 +799,6 @@ void BZET::unset(int64_t bit) {
     // Operate
     result._binop(*this, nb, OP_AND, m_depth);
 
-    // Normalize
-    result.normalize();
-
     // Shallow copy result to *this
 #if NODE_ELS == 4
     m_nnodes = result.m_nnodes;
@@ -816,6 +813,10 @@ void BZET::unset(int64_t bit) {
     m_step = result.m_step;
     result.m_bzet = NULL;
     result.m_step = NULL;
+
+    // Normalize now instead of normalizing immediately after the operation.
+    // For some reason that doesn't work.
+    normalize();
 }
 
 // Get the first bit set
@@ -1410,7 +1411,6 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
             // Note that this implicitly tests if m_depth == 1
             if (empty()) {
                 clear();
-                return NORMAL;
             }
 
             return EMPTY;
@@ -1453,9 +1453,12 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
         else if (node_data == (halfnode_t) -1) {
             // If bzet is empty, commit the node
             if (m_nhalfnodes == 0) {
-                resize(1);
-                m_bzet[0] = node_data;
-                m_step[0] = 0x1;
+                m_depth++;
+                resize(2);
+                m_bzet[0] = 0x1 << (NODE_ELS - 1);
+                m_bzet[1] = 0x0;
+                m_step[0] = 0x2;
+                m_step[1] = 0x1;
             }
             return SATURATED;
         }
@@ -1588,19 +1591,19 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
             if (cur_right_tree_bit) {
                 // 1T
                 if (cur_left_data_bit)
-                    action = optable[(op << 2) + 2];
+                    action = optable[op][2];
                 // 0T
                 else
-                    action = optable[op << 2];
+                    action = optable[op][0];
             }
             // T?
             else {
                 // T1
                 if (cur_right_data_bit)
-                    action = optable[(op << 2) + 3];
+                    action = optable[op][3];
                 // T0
                 else
-                    action = optable[(op << 2) + 1];
+                    action = optable[op][1];
             }
 
             // Used for NA and NB actions
@@ -1615,6 +1618,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
 
                     // Data bit is already 0
 #if NODE_ELS == 4
+                    // Do nothing
 #else
                     node_data <<= 1;
                     node_tree <<= 1;
@@ -1629,6 +1633,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
 
                     // Data bit is already 0
 #if NODE_ELS == 4
+                    // Do nothing
 #else
                     node_data <<= 1;
                     node_tree <<= 1;
@@ -1643,7 +1648,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
 
                     // Turn on data bit
 #if NODE_ELS == 4
-                    new_node |= 0x80 >> ((NODE_ELS - 1) - i);
+                    new_node |= 0x10 << i;
 #else
                     node_data = (node_data << 1) | 0x1;
                     node_tree <<= 1;
@@ -1658,7 +1663,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
 
                     // Turn on data bit
 #if NODE_ELS == 4
-                    new_node |= 0x80 >> ((NODE_ELS - 1) - i);
+                    new_node |= 0x10 << i;
 #else
                     node_data = (node_data << 1) | 0x1;
                     node_tree <<= 1;
@@ -1829,7 +1834,6 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
         // If root node, the bzet is empty
         else {
             clear();
-            return NORMAL;
         }
 
         return EMPTY;
@@ -1839,6 +1843,15 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
         // Drop newly committed node if not root node
         if (m_nhalfnodes > 2) {
             resize(m_nhalfnodes - 2);
+        }
+        // Saturated bzet, build result manually
+        else if (m_nhalfnodes == 2) {
+            // No need to resize since we already have 2 nodes.
+            m_depth++;
+            m_bzet[0] = 0x1 << (NODE_ELS - 1);
+            m_bzet[1] = 0x0;
+            m_step[0] = 0x2;
+            m_step[1] = 0x1;
         }
 
         return SATURATED;

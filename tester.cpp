@@ -82,9 +82,50 @@ void show_raw(BZET& b) {
     delete raw;
 }
 
+void test_saturate(unsigned int nbits, uint8_t* verify, size_t verifylen) {
+    if (!verifylen)
+        return;
+ 
+    BZET b;
+    for (unsigned int i = 0; i < nbits; i++) {
+        b.set(i);
+    }
+
+    assert(b.size() == verifylen);
+
+    uint8_t* bytes = new uint8_t[b.size()];
+    b.hex(bytes);
+    for (size_t i = 0; i < verifylen; i++)
+        assert(bytes[i] == verify[i]);
+    delete bytes;
+
+    for (unsigned int i = 0; i < nbits; i++) {
+        b.unset(i);
+    }
+    assert(b.empty());
+}
+
 int main() {
+    cout << "Testing Bzet" << NODE_ELS << endl;
     //cout << "START\n";
     //freopen ("correctnesstest.txt", "w", stdout);
+
+    // Test proper collapsing
+#if NODE_ELS == 4
+    uint8_t saturate1[] = { 0x2, 0x80 };
+    uint8_t saturate2[] = { 0x3, 0x80 };
+    unsigned int lev1Bits = 16, lev2Bits = 64;
+#elif NODE_ELS == 8
+    uint8_t saturate1[] = { 0x1, 0x80, 0x00 };
+    uint8_t saturate2[] = { 0x2, 0x80, 0x00 };
+    unsigned int lev1Bits = 8, lev2Bits = 64;
+#endif
+
+#if NODE_ELS <= 8
+    test_saturate(lev1Bits, saturate1, sizeof(saturate1));
+    test_saturate(lev2Bits, saturate2, sizeof(saturate2));
+#endif
+
     int density;
     int64_t *bits;
 
