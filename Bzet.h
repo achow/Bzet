@@ -1033,7 +1033,7 @@ int64_t BZET::lastBit() const {
     }
 #endif
 
-    // We shouldn't get here.
+    // We shouldn't get here. This is just to silence a compiler warning.
     return -2;
 }
 
@@ -1681,7 +1681,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
 
                     // Turn on tree bit
 #if NODE_ELS == 4
-                    new_node |= 0x08 >> ((NODE_ELS - 1) - i);
+                    new_node |= 0x01 << i;
 #else
                     node_data <<= 1;
                     node_tree = (node_tree << 1) | 0x1;
@@ -1699,7 +1699,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
 
                     // Turn on tree bit
 #if NODE_ELS == 4
-                    new_node |= 0x08 >> ((NODE_ELS - 1) - i);
+                    new_node |= 0x01 << i;
 #else
                     node_data <<= 1;
                     node_tree = (node_tree << 1) | 0x1;
@@ -1726,7 +1726,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
 
                     // Turn on tree bit
 #if NODE_ELS == 4
-                    new_node |= 0x08 >> ((NODE_ELS - 1) - i);
+                    new_node |= 0x01 << i;
 #else
                     node_data <<= 1;
                     node_tree = (node_tree << 1) | 0x1;
@@ -1753,7 +1753,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
 
                     // Turn on tree bit
 #if NODE_ELS == 4
-                    new_node |= 0x08 >> ((NODE_ELS - 1) - i);
+                    new_node |= 0x01 << i;
 #else
                     node_data <<= 1;
                     node_tree = (node_tree << 1) | 0x1;
@@ -1802,7 +1802,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
 
 #if NODE_ELS == 4
     if (m_bzet[loc] == 0x00) {
-        // Nuild bzet manually if bzet is empty
+        // Build bzet manually if bzet is empty
         if (m_nnodes == 1) {
             clear();
             return NORMAL;
@@ -1813,8 +1813,9 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
     }
     // Resulting node is saturated
     else if (m_bzet[loc] == 0xF0) {
+        // If we only have one node, collapse up one level. We can just do this
+        // manually.
         if (m_nnodes == 1) {
-            resize(1);
             m_depth++;
             m_bzet[0] = 0x80;
             m_step[0] = 1;
@@ -2356,7 +2357,7 @@ NODETYPE BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int d
         b.m_bzet[locb + 1] |= right.m_bzet[locright + 1];
         // If node is saturated, drop these node and signal it was dropped
         if (b.m_bzet[locb] == 0xFF && b.m_bzet[locb + 1] == 0xFF) {
-            // If these are the only nodes
+            // If these are the only nodes, we can just collapse up manually.
             if (b.m_nnodes == 2) {
                 b.resize(1);
                 b.m_bzet[0] = 0x80;
@@ -2369,14 +2370,14 @@ NODETYPE BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int d
 #else
         // If node is saturated, drop this node and signal it was dropped
         if (b.m_bzet[locb] == (halfnode_t) -1) {
-            // If this is the only node
+            // If this is the only node, we can just collapse up manually.
             if (b.m_nhalfnodes == 1) {
                 b.resize(2);
                 b.m_bzet[0] = ((halfnode_t) 1 << (NODE_ELS - 1));
                 b.m_bzet[1] = 0;
                 b.m_step[0] = 2;
                 b.m_depth = 1;
-                return NORMAL;
+                return EMPTY;
             }
 
             b.resize(b.m_nhalfnodes - 1);
@@ -2394,7 +2395,7 @@ NODETYPE BZET::_seqset(BZET& b, size_t locb, BZET& right, size_t locright, int d
 #else
     halfnode_t& bdata_bits = b.m_bzet[locb];
     halfnode_t& btree_bits = b.m_bzet[locb + 1];
-    //halfnode_t& rightdata_bits = right.m_bzet[locright];
+    //halfnode_t& rightdata_bits = right.m_bzet[locright]; // unused
     halfnode_t& righttree_bits = right.m_bzet[locright + 1];
 #endif
     size_t loc = locb;
