@@ -73,12 +73,14 @@ size_t const PASTE(powersof, NODE_ELS)[NPOWERS] =
 typedef uint8_t halfnode_t;
 #define NPOWERS 11
 size_t const PASTE(powersof, NODE_ELS)[NPOWERS] = 
-    { 1, 8, 64, 512, 4096, 32768, 262144, 2097152, 16777216, 134217728, 1073741824 };
+    { 1, 8, 64, 512, 4096, 32768, 262144, 2097152, 16777216, 134217728, 
+      1073741824 };
 #elif NODE_ELS == 4
 typedef uint8_t node_t;
 #define NPOWERS 17
 size_t const PASTE(powersof, NODE_ELS)[NPOWERS] = 
-    { 1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576, 4194304, 16777216, 67108864, 268435456, 1073741824};
+    { 1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576, 4194304, 
+      16777216, 67108864, 268435456, 1073741824};
 #else
 #error "Invalid NODE_ELS provided"
 #endif
@@ -181,6 +183,7 @@ class BZET {
         int64_t getBits(int64_t* bits, int64_t limit = 0, int64_t start = 0);
 		bool empty() const;
 
+        // DEBUG ONLY
         void printStep() {
 #if NODE_ELS == 4
             for (size_t i = 0; i < m_nnodes; i++) {
@@ -189,7 +192,8 @@ class BZET {
 #endif
                 if ((i % 10) == 0)
                     printf("\n");
-                printf("0x%.*X ", (unsigned int) sizeof(step_t) * 2, (step_t) m_step[i]);
+                printf("0x%.*X ", (unsigned int) sizeof(step_t) * 2, 
+                       (step_t) m_step[i]);
                 //printf("%d ", m_step[i]);
             }
             printf("\n");
@@ -201,18 +205,23 @@ class BZET {
         //void treetobits(unsigned char *buf, halfnode_t *node, int depth);
 #endif
 
-        NODETYPE _binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc = 0, size_t right_loc = 0);
-        void _printBzet(int stdOffset, FILE* target, int depth, size_t loc = 0, int offset = 0, bool pad = 0) const;
+        NODETYPE _binop(BZET& left, BZET& right, OP op, int lev, 
+                        size_t left_loc = 0, size_t right_loc = 0);
+        void _printBzet(int stdOffset, FILE* target, int depth, size_t loc = 0, 
+                        int offset = 0, bool pad = 0) const;
         int64_t _count(size_t loc, int depth) const;
         void subtree_not(size_t loc, int depth);
-        static NODETYPE _seqset(BZET& b, size_t locb, BZET& right, size_t locright, int depth);
-        static bool _at(BZET& b, size_t locb, BZET& right, size_t locright, int depth);
+        static NODETYPE _seqset(BZET& b, size_t locb, BZET& right, 
+                                size_t locright, int depth);
+        static bool _at(BZET& b, size_t locb, BZET& right, size_t locright, 
+                        int depth);
         size_t build_step(size_t loc, int depth);
 
         size_t step_through(size_t loc, int depth) const;
 
         // Inline auxiliary functions
-        static void display_error(const char* message, bool fatal = false, FILE* output = stderr);
+        static void display_error(const char* message, bool fatal = false, 
+                                  FILE* output = stderr);
         void init(size_t initial_alloc = INITIAL_ALLOC);
 #if NODE_ELS == 4
         void resize(size_t nnodes);
@@ -1940,7 +1949,9 @@ void BZET::_printBzet(int stdOffset, FILE* target, int depth, size_t loc, int of
 
     // If depth is 0 or no tree bits are set, this is a data node
     if (depth == 0 || !tree_bits) {
-        fprintf(target, "D(%.*X)\n", sizeof(halfnode_t) * 2, data_bits);
+        // data_bits has max 32 bits for Bzet64, so cast to unsigned int to
+        // silence compiler warning is okay
+        fprintf(target, "D(%.*X)\n", (int) sizeof(halfnode_t) * 2, (unsigned int) data_bits);
         /*if (m_step[loc] != 1) {
             printf("data node with step != 1 at %d, nhalf=%d\n", loc, m_nhalfnodes);
             exit(1);
@@ -1949,8 +1960,10 @@ void BZET::_printBzet(int stdOffset, FILE* target, int depth, size_t loc, int of
     // Otherwise this is a tree node
     else {     
         // Print the current node
-        fprintf(target, "[%.*X-%.*X]", sizeof(halfnode_t) * 2, data_bits, 
-            sizeof(halfnode_t) * 2, tree_bits);
+        // data_bits and tree_bits have max 32 bits for Bzet64, so cast to 
+        // unsigned int to silence compiler warning is okay
+        fprintf(target, "[%.*X-%.*X]", (int) sizeof(halfnode_t) * 2, (unsigned int) data_bits, 
+            (int) sizeof(halfnode_t) * 2, (unsigned int) tree_bits);
 
         // Recursively print subtrees
         bool firstNode = true;

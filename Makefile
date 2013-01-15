@@ -1,6 +1,8 @@
-GCC = g++
-CFLAGS =-g -Wall -DBZET_IMPL_ -DNTESTS=10 #-DDEBUG
-LIBS =
+GCC=g++
+CFLAGS=-g -Wall -DBZET_IMPL_ -DNTESTS=10 #-DDEBUG
+LIBS=
+
+default: all
 
 four: Bzet.h tester.cpp
 	$(GCC) $(CFLAGS) $(LIBS) -o Bzet4Test -DNODE_ELS=4 Bzet.h tester.cpp
@@ -34,3 +36,6 @@ dummy:
 	./Bzet16Test || echo 'Bzet16 test failed'
 	./Bzet32Test || echo 'Bzet32 test failed' 
 	./Bzet64Test || echo 'Bzet64 test failed'
+
+clean:
+	rm Bzet*Test
