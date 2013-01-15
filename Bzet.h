@@ -1455,7 +1455,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
             if (m_nhalfnodes == 0) {
                 m_depth++;
                 resize(2);
-                m_bzet[0] = 0x1 << (NODE_ELS - 1);
+                m_bzet[0] = (halfnode_t) 0x1 << (NODE_ELS - 1);
                 m_bzet[1] = 0x0;
                 m_step[0] = 0x2;
                 m_step[1] = 0x1;
@@ -1849,7 +1849,7 @@ NODETYPE BZET::_binop(BZET& left, BZET& right, OP op, int lev, size_t left_loc, 
         else if (m_nhalfnodes == 2) {
             // No need to resize since we already have 2 nodes.
             m_depth++;
-            m_bzet[0] = 0x1 << (NODE_ELS - 1);
+            m_bzet[0] = (halfnode_t) 0x1 << (NODE_ELS - 1);
             m_bzet[1] = 0x0;
             m_step[0] = 0x2;
             m_step[1] = 0x1;
