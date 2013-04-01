@@ -104,6 +104,7 @@ typedef uint8_t step_t;
 #endif
 
 typedef uint8_t byte_t;
+typedef int64_t bitidx_t;
 
 #define STEP_T_MAX ((size_t) 1 << (STEP_BYTES * 8))
 
@@ -146,8 +147,8 @@ static const ACTION optable[16][4] = {
 class BZET {
     public:
         BZET();
-        BZET(int64_t bit);
-        BZET(int64_t startbit, int64_t len);
+        BZET(bitidx_t bit);
+        BZET(bitidx_t startbit, bitidx_t len);
         BZET(const BZET& b);
         ~BZET();
 
@@ -160,11 +161,11 @@ class BZET {
 
         static BZET binop(BZET& left, BZET& right, OP op);
 
-        bool at(int64_t bit) const;
-        void setRange(int64_t start, int64_t len);
-        void set(int64_t bit);
-        void seqset(int64_t bit);
-        void unset(int64_t bit);
+        bool at(bitidx_t bit) const;
+        void setRange(bitidx_t start, bitidx_t len);
+        void set(bitidx_t bit);
+        void seqset(bitidx_t bit);
+        void unset(bitidx_t bit);
 
         int depth() const;
         size_t size() const;
@@ -179,10 +180,10 @@ class BZET {
         void exportTo(FILE* stream) const;
         void importFrom(FILE* stream, size_t size);
 
-		int64_t firstBit() const;
-        int64_t lastBit() const;
-        int64_t count() const;
-        int64_t getBits(int64_t* bits, int64_t limit = 0, int64_t start = 0);
+		bitidx_t firstBit() const;
+        bitidx_t lastBit() const;
+        bitidx_t count() const;
+        bitidx_t getBits(bitidx_t* bits, bitidx_t limit = 0, bitidx_t start = 0);
 		bool empty() const;
 
         // DEBUG ONLY
@@ -212,7 +213,7 @@ class BZET {
                         size_t left_loc = 0, size_t right_loc = 0);
         void _printBzet(int stdOffset, FILE* target, int depth, size_t loc = 0, 
                         int offset = 0, bool pad = 0) const;
-        int64_t _count(size_t loc, int depth) const;
+        bitidx_t _count(size_t loc, int depth) const;
         void subtree_not(size_t loc, int depth);
         static NODETYPE _seqset(BZET& b, size_t locb, BZET& right, 
                                 size_t locright, int depth);
@@ -459,7 +460,7 @@ BZET::BZET() {
 }
 
 // Creates a bzet with bit bit set
-BZET::BZET(int64_t bit) {
+BZET::BZET(bitidx_t bit) {
     if (bit < 0) {
         display_error("bit < 0 in Bzet_new(bit)\n", true);
     }
@@ -470,10 +471,10 @@ BZET::BZET(int64_t bit) {
     // Build depth
     int depth = 1;
 
-    int64_t tempbit = bit;
+    bitidx_t tempbit = bit;
     // Level 1 holds 16 bits, numbers 0 to 15
     while (tempbit > 15) {
-        tempbit /= (int64_t) NODE_ELS;
+        tempbit /= (bitidx_t) NODE_ELS;
         ++depth;
     }
 
@@ -548,7 +549,7 @@ BZET::BZET(int64_t bit) {
 }
 
 // Range constructor
-BZET::BZET(int64_t startbit, int64_t len) {
+BZET::BZET(bitidx_t startbit, bitidx_t len) {
     if (len <= 0 || startbit < 0)
         display_error("len <= 0 || startbit < 0", true);
 
@@ -722,7 +723,7 @@ BZET BZET::binop(BZET& left, BZET& right, OP op) {
 // -- BIT OPERATIONS --
 
 // Test if a bit is set
-bool BZET::at(int64_t bit) const {
+bool BZET::at(bitidx_t bit) const {
     // Test if a bit is set by ANDing the bzet with a bzet with only bit set
     // and checking if the result is empty
     // *this & Bzet(bit)
@@ -736,10 +737,10 @@ bool BZET::at(int64_t bit) const {
 }
 
 // Set a range of bits
-void BZET::setRange(int64_t start, int64_t len) {
+void BZET::setRange(bitidx_t start, bitidx_t len) {
     // Create bzet mask
     BZET mask;
-    for (int64_t i = start; i < start + len; i++)
+    for (bitidx_t i = start; i < start + len; i++)
         mask.set(i);
 
     // OR the mask into the original bzet
@@ -747,7 +748,7 @@ void BZET::setRange(int64_t start, int64_t len) {
 }
 
 // Set a bit
-void BZET::set(int64_t bit) {
+void BZET::set(bitidx_t bit) {
     // Set a bit by ORing a bzet with bit set into b
     // b | Bzet(bit)
     if (empty())
@@ -787,7 +788,7 @@ void BZET::set(int64_t bit) {
 }
 
 // Sequential set, bit must be greater than the last bit set in the bzet
-void BZET::seqset(int64_t bit) {
+void BZET::seqset(bitidx_t bit) {
     if (empty())
         *this = BZET(bit);
     else {
@@ -799,7 +800,7 @@ void BZET::seqset(int64_t bit) {
 }
 
 // Unset a bit
-void BZET::unset(int64_t bit) {
+void BZET::unset(bitidx_t bit) {
     // Set a bit by ANDing b with the negation of a bzet with bit set
     // b & ~Bzet(bit)
     BZET nb = BZET(bit);
@@ -833,13 +834,13 @@ void BZET::unset(int64_t bit) {
 
 // Get the first bit set
 // TODO: Add support for bit literal subtrees
-int64_t BZET::firstBit() const {
+bitidx_t BZET::firstBit() const {
     if (empty())
         return -1;
 
 #if NODE_ELS == 4
     int level = m_depth;
-    int64_t bit = 0;
+    bitidx_t bit = 0;
     size_t loc = 0;
 
     // Move through the tree to find the first bit
@@ -853,7 +854,7 @@ int64_t BZET::firstBit() const {
             if (c)
                 for (int i = 7; i >= 0; i--)
                     if ((c >> i) & 1)
-                        return bit + 7 - (int64_t) i;
+                        return bit + 7 - (bitidx_t) i;
 
             // If no data bit set in first 2 nodes, check next 2 nodes
             c = m_bzet[loc + 1];
@@ -885,7 +886,7 @@ int64_t BZET::firstBit() const {
         loc++;
     }
 #else
-    int64_t bit = 0;
+    bitidx_t bit = 0;
     int depth = m_depth;
     size_t loc = 0;
     // Move through the tree to find the first bit
@@ -925,7 +926,7 @@ int64_t BZET::firstBit() const {
 
 // Bzet_LAST(b)
 // TODO: Add support for bit literal subtrees
-int64_t BZET::lastBit() const {
+bitidx_t BZET::lastBit() const {
     if (empty())
         return -1;
 
@@ -933,7 +934,7 @@ int64_t BZET::lastBit() const {
     // TODO: Fix lastBit() for Bzet4
     size_t loc = 0; 
     int level = m_depth; 
-    int64_t bit = 0;
+    bitidx_t bit = 0;
 
     do {
         // Special calculation at level 1
@@ -998,7 +999,7 @@ int64_t BZET::lastBit() const {
         level--;
     } while (loc < m_nnodes);
 #else
-    int64_t bit = 0;
+    bitidx_t bit = 0;
     int depth = m_depth;
     size_t loc = 0;
     // Move through the tree to find the first bit
@@ -1050,7 +1051,7 @@ int64_t BZET::lastBit() const {
 }
 
 // Count the number of bits set
-int64_t BZET::count() const {
+bitidx_t BZET::count() const {
     return _count(0, m_depth);
 }
 
@@ -1166,19 +1167,19 @@ bool BZET::empty() const {
 }
 
 // Get indices of bits set in the bzet
-int64_t BZET::getBits(int64_t* bits, int64_t limit, int64_t start) {
-    int64_t bit;
+bitidx_t BZET::getBits(bitidx_t* bits, bitidx_t limit, bitidx_t start) {
+    bitidx_t bit;
     size_t loc = 0;
 
     // Set number of bits to get, which is the smaller of the
     // number of bits set in b and limit (if set)
-    int64_t bitcount = count();
+    bitidx_t bitcount = count();
     limit = limit ? ((limit > bitcount) ? bitcount : limit) : bitcount;
 
     // Clone this bzet to use to get bits
     BZET b_copy(*this);
 
-    for (int64_t i = 0; i < limit; i++) {
+    for (bitidx_t i = 0; i < limit; i++) {
         // Get the first bit set and commit to bits
         bit = b_copy.firstBit();
 #ifdef DEBUG
@@ -2290,11 +2291,11 @@ void BZET::subtree_not(size_t loc, int depth) {
 }
 
 // TODO: use popcount, add support for bit literal subtree
-int64_t BZET::_count(size_t loc, int depth) const {
+bitidx_t BZET::_count(size_t loc, int depth) const {
     if (empty())
         return 0;
 
-    int64_t count = 0;
+    bitidx_t count = 0;
 
 #if NODE_ELS == 4
     // Just return bit count with weight 1

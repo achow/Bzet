@@ -2,7 +2,7 @@ GCC=g++
 CFLAGS=-g -Wall -DBZET_IMPL_ -DNTESTS=10 #-DDEBUG
 LIBS=
 
-default: all
+default: Bzet.h all
 
 four: Bzet.h tester.cpp
 	$(GCC) $(CFLAGS) $(LIBS) -o Bzet4Test -DNODE_ELS=4 Bzet.h tester.cpp
