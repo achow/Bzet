@@ -155,9 +155,9 @@ class BZET {
         BZET& operator=(const BZET& right);
         BZET operator~() const;
         BZET operator|(BZET& right);
-		BZET operator&(BZET& right);
-		BZET operator^(BZET& right);
-		bool operator==(const BZET& right) const;
+    	BZET operator&(BZET& right);
+    	BZET operator^(BZET& right);
+    	bool operator==(const BZET& right) const;
 
         static BZET binop(BZET& left, BZET& right, OP op);
 
@@ -180,11 +180,11 @@ class BZET {
         void exportTo(FILE* stream) const;
         void importFrom(FILE* stream, size_t size);
 
-		bitidx_t firstBit() const;
+    	bitidx_t firstBit() const;
         bitidx_t lastBit() const;
         bitidx_t count() const;
         bitidx_t getBits(bitidx_t* bits, bitidx_t limit = 0, bitidx_t start = 0);
-		bool empty() const;
+    	bool empty() const;
 
         // DEBUG ONLY
         void printStep() {

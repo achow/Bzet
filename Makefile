@@ -2,7 +2,12 @@ GCC=g++
 CFLAGS=-g -Wall -DBZET_IMPL_ -DNTESTS=10 #-DDEBUG
 LIBS=
 
-default: Bzet.h all
+all: Bzet.h tester.cpp
+	$(GCC) $(CFLAGS) $(LIBS) -o Bzet4Test -DNODE_ELS=4 Bzet.h tester.cpp
+	$(GCC) $(CFLAGS) $(LIBS) -o Bzet8Test -DNODE_ELS=8 Bzet.h tester.cpp
+	$(GCC) $(CFLAGS) $(LIBS) -o Bzet16Test -DNODE_ELS=16 Bzet.h tester.cpp
+	$(GCC) $(CFLAGS) $(LIBS) -o Bzet32Test -DNODE_ELS=32 Bzet.h tester.cpp
+	$(GCC) $(CFLAGS) $(LIBS) -o Bzet64Test -DNODE_ELS=64 Bzet.h tester.cpp
 
 four: Bzet.h tester.cpp
 	$(GCC) $(CFLAGS) $(LIBS) -o Bzet4Test -DNODE_ELS=4 Bzet.h tester.cpp
@@ -20,14 +25,7 @@ sixfour: Bzet.h tester.cpp
 	$(GCC) $(CFLAGS) $(LIBS) -o Bzet64Test -DNODE_ELS=64 Bzet.h tester.cpp
 	./Bzet64Test
 
-all: Bzet.h tester.cpp
-	$(GCC) $(CFLAGS) $(LIBS) -o Bzet4Test -DNODE_ELS=4 Bzet.h tester.cpp
-	$(GCC) $(CFLAGS) $(LIBS) -o Bzet8Test -DNODE_ELS=8 Bzet.h tester.cpp
-	$(GCC) $(CFLAGS) $(LIBS) -o Bzet16Test -DNODE_ELS=16 Bzet.h tester.cpp
-	$(GCC) $(CFLAGS) $(LIBS) -o Bzet32Test -DNODE_ELS=32 Bzet.h tester.cpp
-	$(GCC) $(CFLAGS) $(LIBS) -o Bzet64Test -DNODE_ELS=64 Bzet.h tester.cpp
-
-check: all
+check: all tester.cpp
 	./Bzet4Test && ./Bzet8Test && ./Bzet16Test && ./Bzet32Test && ./Bzet64Test
 
 dummy:

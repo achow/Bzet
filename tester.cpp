@@ -127,7 +127,7 @@ int main() {
 #endif
 
     int density;
-    int64_t *bits;
+    bitidx_t *bits;
 
     for (int i = 0; i < NTESTS; i++) {
         // Seed rand()
@@ -245,7 +245,7 @@ int main() {
 
         cout << "Bit counts match for AND: " << bzetAND.count() << endl;
 
-        bits = new int64_t[bzetAND.count()];
+        bits = new bitidx_t[bzetAND.count()];
         bzetAND.getBits(bits);
 
         for (int i = 0; i < bzetAND.count(); i++) {
@@ -278,7 +278,7 @@ int main() {
 #ifdef COMPLETE
         assert(bzetOR.count() == nbits * 2 - bzetAND.count());
 
-        bits = new int64_t[bzetOR.count()];
+        bits = new bitidx_t[bzetOR.count()];
         bzetOR.getBits(bits);
 
         for (int i = 0; i < bzetOR.count(); i++) {
@@ -309,7 +309,7 @@ int main() {
 
 #ifdef COMPLETE
 
-        bits = new int64_t[bzetXOR.count()];
+        bits = new bitidx_t[bzetXOR.count()];
         bzetXOR.getBits(bits);
 
         for (int i = 0; i < bzetXOR.count(); i++) {
